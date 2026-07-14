@@ -5,16 +5,25 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "cachetools>=7.1.4",
     "fastapi[all]>=0.139.0",
+    "httpx>=0.28.1",
     "pandas>=3.0.3",
-    "pydantic-core>=2.46.4",
-    "pytest>=9.1.1",
-    "requests>=2.34.2",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
 ]
 
-[tool.setuptools.packages.find]
-include = ["app*"]
-namespaces = true
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.0",
+    "respx>=0.22.0",
+    "anyio>=4.14",
+    "ruff>=0.14",
+]
+
+[tool.uv]
+package = false
 
 [tool.ruff]
 line-length = 150
@@ -23,7 +32,7 @@ extend-exclude = ["allocate.py.py", "note.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "RUF", "SIM","FAST"]
-ignore = []
+ignore = ["UP047"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011"]
@@ -35,4 +44,12 @@ filterwarnings = [
     "ignore::PendingDeprecationWarning",
     "ignore::FutureWarning",
 ]
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers --import-mode=importlib"
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["app", "scripts"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
