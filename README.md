@@ -1,1 +1,1 @@
-# metamorphosis_ai_cheif_strategy_office
+# metamorphosis_ai_chief_strategy_office
