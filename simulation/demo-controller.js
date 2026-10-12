@@ -83,7 +83,7 @@ export class CivilianTraffic {
       const road=this.roads[i%this.roads.length],reverse=!road.oneWay&&Math.floor(i/this.roads.length)%2===1;
       let kind=i%20<12?'bike':i%20<19?'car':'truck';if(road.lanes===1&&kind==='truck')kind='car';
       const model=kind==='bike'?BIKES[i%BIKES.length]:kind==='car'?CARS[(i+Math.floor(i/20))%CARS.length]:TRUCKS[i%TRUCKS.length];
-      const agent={id:i,road:road.id,a:reverse?road.b:road.a,b:reverse?road.a:road.b,t:this.random()*.95,speed:kind==='bike'?7+this.random()*4:5+this.random()*4,kind,model,colorIndex:i%6,lane:i%2,offset:0,stopped:false,pose:null};
+      const agent={id:i,road:road.id,a:reverse?road.b:road.a,b:reverse?road.a:road.b,t:this.random()*.95,speed:kind==='bike'?7+this.random()*4:5+this.random()*4,kind,model,colorIndex:(i+Math.floor(i/this.roads.length))%6,lane:i%2,offset:0,stopped:false,pose:null};
       agent.offset=this.laneOffset(agent,road);this.agents.push(agent);
     }
   }

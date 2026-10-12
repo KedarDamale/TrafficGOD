@@ -95,3 +95,13 @@ test('dense mixed traffic covers all 150 roads and stays batched for rendering',
   assert.ok(traffic.agents.every(a=>Object.values(a.pose).every(Number.isFinite)));
   fleet.dispose();disposeCityMap(city);
 });
+
+test('a clicked point halfway along a curved road is reached exactly, then the ambulance returns',()=>{
+  const city=createCityMap(),map=city.userData,road=map.roads.find(r=>!r.bridge&&r.length>300),p=road.points[8],c=new AmbulanceDemoController(map);
+  c.start(road.a,'accident',{x:p.x,z:p.z,roadId:road.id,along:p.distance});
+  while(c.phase==='outbound')c.tick(.25);
+  assert.equal(c.phase,'at-incident');assert.ok(Math.hypot(c.pose.x-p.x,c.pose.z-p.z)<.001);
+  for(let i=0;i<2000&&c.phase!=='completed';i++)c.tick(.25);
+  assert.equal(c.phase,'completed');assert.ok(Math.hypot(c.pose.x-c.hospital.entrance.x,c.pose.z-c.hospital.entrance.z)<.001);
+  disposeCityMap(city);
+});

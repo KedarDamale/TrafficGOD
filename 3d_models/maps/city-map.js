@@ -36,12 +36,12 @@ export function createCityMap() {
   function polygon(points,color,y,name){
     const shape=new THREE.Shape();points.forEach(([x,z],i)=>i?shape.lineTo(x,-z):shape.moveTo(x,-z));shape.closePath();
     const g=new THREE.ShapeGeometry(shape);g.rotateX(-Math.PI/2);
-    const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:3}));m.position.y=y;m.name=name;m.receiveShadow=true;city.add(m);
+    const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1,polygonOffset:true,polygonOffsetFactor:0,polygonOffsetUnits:1}));m.position.y=y;m.name=name;m.receiveShadow=true;city.add(m);
   }
   const sea=new THREE.Mesh(new THREE.PlaneGeometry(20000,20000),new THREE.MeshStandardMaterial({color:'#b4cfde',roughness:1}));sea.rotation.x=-Math.PI/2;sea.position.y=-.15;sea.name='sea-and-harbor';city.add(sea);
   polygon(PENINSULA,'#edf0eb',.02,'peninsula');polygon(MAINLAND,'#e9eee8',.02,'mainland');
   for(const [name,x,z,rx,rz,color] of [['forest',-1200,-8900,1350,2000,'#c7d9c0'],['lake',400,-6100,650,450,'#93bed5']]){
-    const m=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color,roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));
+    const m=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color,roughness:1,polygonOffset:true,polygonOffsetFactor:0,polygonOffsetUnits:-1}));
     m.rotation.x=-Math.PI/2;m.position.set(x*S,.07,z*S);m.scale.set(rx*S,rz*S,1);m.name=name;city.add(m);
   }
   let treeCount=0,buildingCount=0;
