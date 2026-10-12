@@ -4,9 +4,11 @@ import * as THREE from 'three';
 import { createCityMap,disposeCityMap } from '../3d_models/maps/city-map.js';
 import { BUILDINGS,createBuilding,disposeBuilding } from '../3d_models/buildings/index.js';
 import { VEHICLES,createVehicle,disposeVehicle } from '../3d_models/index.js';
-import { AmbulanceDemoController,CivilianTraffic,chooseLocations } from '../simulation/demo-controller.js';
+import { AmbulanceDemoController,CivilianTraffic,chooseLocations,TRAFFIC_COUNT } from '../simulation/demo-controller.js';
 import { FleetRenderer } from '../simulation/fleet-renderer.js';
 import { findRoute } from '../simulation/graph.js';
+import { nearestRoad } from '../simulation/road-network.js';
+import { createBuildingPicker } from '../simulation/building-selection.js';
 
 test('ten cars have distinct cabin silhouettes even after removing scale and paint',()=>{
   const signatures=new Set();
@@ -29,20 +31,28 @@ test('all building models have finite grounded geometry and visible identifying 
   }
 });
 
-test('compact city has exactly 150 unique curved streets and service coverage',()=>{
+test('city physically shrinks around 100 curved streets and fills its blocks with named buildings',()=>{
   const city=createCityMap(),map=city.userData;
-  assert.equal(map.stats.roads,150);
-  assert.equal(map.areaFraction,.08);
-  assert.equal(new Set(map.roads.map(r=>r.name)).size,150);
+  assert.equal(map.stats.roads,100);
+  assert.ok(map.bounds.width<=1400&&map.bounds.length<=1550);
+  assert.ok(map.bounds.width*map.bounds.length<.15*(10700*23000*.08),'City footprint must shrink too');
+  assert.equal(new Set(map.roads.map(r=>r.name)).size,100);
   assert.deepEqual([...new Set(map.roads.map(r=>r.lanes))].sort(),[1,2,4]);
   for(const road of map.roads){
     const a=road.points[0],b=road.points.at(-1),mid=road.points[8];
     assert.ok(Math.abs((b.x-a.x)*(mid.z-a.z)-(b.z-a.z)*(mid.x-a.x))>.005*Math.hypot(b.x-a.x,b.z-a.z)**2,'Road must curve');
   }
   assert.ok(map.stats.buildings>1000);
+  assert.ok(map.stats.buildings/(map.bounds.width*map.bounds.length/1e6)>450);
+  const buildings=[...map.buildingPlots,...map.services];
+  assert.equal(buildings.length,map.stats.buildings);
+  assert.equal(new Set(buildings.map(b=>b.name)).size,buildings.length);
+  for(const b of buildings)assert.ok(b.name&&b.district&&b.roadName);
+  for(const b of map.buildingPlots){const near=nearestRoad(map.roads,b.x,b.z);assert.ok(near.distance>=near.road.width/2+b.radius+1.99);}
   const districts=new Map();
   for(const s of map.services){if(!districts.has(s.district))districts.set(s.district,new Set());districts.get(s.district).add(s.type);}
   assert.equal(districts.size,map.stats.districts);
+  assert.ok(districts.has('Tilak Nagar')&&districts.has('Shivaji Nagar'));
   for(const types of districts.values())assert.deepEqual([...types].sort(),['fire-station','hospital','police-station']);
   assert.equal(city.getObjectByName('ambulance'),undefined);
   const graph=new Map(map.nodes.map(n=>[n.id,n]));
@@ -70,34 +80,70 @@ test('all location and event choices finish one hospital-incident-hospital round
   disposeCityMap(city);
 });
 
-test('civilian cars stop on red approaches, yield near ambulance, and resume after passage',()=>{
-  const nodes=[{id:'a',x:0,z:0,neighbors:['b'],signal:0},{id:'b',x:180,z:0,neighbors:['a','c'],signal:1},{id:'c',x:180,z:180,neighbors:['b'],signal:2}];
-  const map={nodes,roads:[{a:'a',b:'b'}]},traffic=new CivilianTraffic(map,nodes,1);
-  const agent=traffic.agents[0];agent.a='a';agent.b='b';agent.t=.94;
-  const controller={timeScale:6,clock:0,pose:{x:-500,z:-500},phase:'outbound',priorities:new Map([['b',{axis:'z'}]])};
-  traffic.tick(.1,controller);assert.equal(agent.stopped,true);const position=agent.t;
-  controller.priorities.set('b',{axis:'x'});traffic.tick(.1,controller);assert.equal(agent.stopped,false);assert.ok(agent.t>position);
-  controller.pose={x:170,z:0};traffic.tick(.1,controller);assert.equal(agent.stopped,true);assert.ok(agent.offset>3.2);
-  controller.phase='completed';traffic.tick(.1,controller);assert.equal(agent.stopped,false);
+test('ambulance green wave stops cross traffic and keeps its own road moving without sideways jumps',()=>{
+  const nodes=[{id:'w',x:-150,z:0,signal:null},{id:'j',x:0,z:0,signal:0},{id:'e',x:150,z:0,signal:null},{id:'n',x:0,z:-150,signal:null}];
+  const roads=[{id:'W',a:'w',b:'j'},{id:'E',a:'j',b:'e'},{id:'N',a:'n',b:'j'}],traffic=new CivilianTraffic({nodes,roads},[],2);
+  const [corridor,cross]=traffic.agents;
+  Object.assign(corridor,{kind:'car',road:'W',a:'w',b:'j',t:.88,offset:1.75});
+  Object.assign(cross,{kind:'car',road:'N',a:'n',b:'j',t:.88,offset:1.75});
+  const controller={timeScale:6,clock:0,pose:{x:-18,z:0},phase:'outbound',priorities:new Map([['j',{roads:['W','E']}]])};
+  traffic.tick(.1,controller);
+  assert.equal(cross.stopped,true);assert.equal(cross.t,.88);
+  assert.equal(corridor.stopped,false);assert.ok(corridor.road!=='W'||corridor.t>.88);assert.ok(corridor.pose.x>-18);
+  assert.equal(cross.offset,1.75);assert.equal(corridor.offset,1.75);
+  controller.priorities.clear();controller.phase='completed';controller.clock=12;
+  traffic.tick(.1,controller);assert.equal(cross.stopped,true,'Wait until the junction is clear');
+  for(let i=0;i<50&&cross.stopped;i++)traffic.tick(.1,controller);
+  assert.equal(cross.stopped,false);assert.ok(cross.pose.z>-18);
 });
 
-test('dense mixed traffic covers all 150 roads and stays batched for rendering',()=>{
-  const city=createCityMap(),map=city.userData,c=new AmbulanceDemoController(map),traffic=new CivilianTraffic(map,[],3600);
-  assert.equal(new Set(traffic.agents.map(a=>a.road)).size,150);
+test('a green approach waits at its stop line when the exit is full, then clears normally',()=>{
+  const nodes=[{id:'w',x:-150,z:0,signal:null},{id:'j',x:0,z:0,signal:0},{id:'e',x:150,z:0,signal:null}];
+  const traffic=new CivilianTraffic({nodes,roads:[{id:'W',a:'w',b:'j'},{id:'E',a:'j',b:'e'}]},[],2);
+  const [incoming,exit]=traffic.agents;
+  Object.assign(incoming,{kind:'car',road:'W',a:'w',b:'j',t:.88,offset:1.75});
+  Object.assign(exit,{kind:'car',road:'E',a:'j',b:'e',t:.02,offset:1.75});
+  const controller={timeScale:6,clock:0,phase:'outbound',priorities:new Map([['j',{roads:['W','E']}]])};
+  traffic.tick(.1,controller);assert.equal(incoming.stopped,true);assert.equal(incoming.t,.88);assert.equal(incoming.turn,null);
+  exit.t=.5;
+  traffic.tick(.1,controller);assert.equal(incoming.stopped,false);assert.ok(incoming.pose.x>-18);
+});
+
+test('building selection hits rotated roofs and chooses the closest named volume',()=>{
+  const buildings=[{id:'a',name:'Shivkrupa Niwas',x:0,z:0,width:10,depth:30,height:20,yaw:Math.PI/2},{id:'b',name:'Tilak Nagar Rugnalaya',x:80,z:0,width:20,depth:20,height:30}];
+  const pick=createBuildingPicker(buildings);
+  assert.equal(pick(new THREE.Ray(new THREE.Vector3(12,100,0),new THREE.Vector3(0,-1,0))).name,'Shivkrupa Niwas');
+  assert.equal(pick(new THREE.Ray(new THREE.Vector3(80,100,0),new THREE.Vector3(0,-1,0))).name,'Tilak Nagar Rugnalaya');
+  assert.equal(pick(new THREE.Ray(new THREE.Vector3(0,100,12),new THREE.Vector3(0,-1,0))),null);
+});
+
+test('dense mixed traffic covers all 100 roads and stays inside its lanes through emergency preemption',()=>{
+  const city=createCityMap(),map=city.userData,c=new AmbulanceDemoController(map),traffic=new CivilianTraffic(map);
+  assert.equal(new Set(traffic.agents.map(a=>a.road)).size,100);
   assert.ok(traffic.agents.filter(a=>a.kind==='bike').length>traffic.agents.length*.5);
   assert.ok(traffic.agents.some(a=>a.kind==='truck'));
   traffic.tick(.1,c);
   const fleet=new FleetRenderer(traffic.agents);
-  fleet.update();assert.equal(fleet.visibleCount,3600);
+  fleet.update();assert.equal(fleet.visibleCount,TRAFFIC_COUNT);
   let meshes=0;fleet.root.traverseVisible(o=>{if(o.isMesh)meshes++;});assert.ok(meshes<400);
-  for(let i=0;i<100;i++){c.tick(.1);traffic.tick(.1,c);}
+  c.start(chooseLocations(map)[1].node);
+  let moving=0;
+  for(let i=0;i<200;i++){
+    c.tick(.1);traffic.tick(.1,c);
+    for(const a of traffic.agents){
+      const road=traffic.lookup.get(a.road),margin=a.kind==='bike'?.65:a.kind==='truck'?1.6:1.3;
+      assert.ok(Math.abs(a.offset)+margin<=road.width/2+.001);
+      if(!a.stopped)moving++;
+    }
+  }
+  assert.ok(moving>2000,'City traffic must continue moving during dispatch');
   assert.ok(traffic.yielding>0);
   assert.ok(traffic.agents.every(a=>Object.values(a.pose).every(Number.isFinite)));
   fleet.dispose();disposeCityMap(city);
 });
 
 test('a clicked point halfway along a curved road is reached exactly, then the ambulance returns',()=>{
-  const city=createCityMap(),map=city.userData,road=map.roads.find(r=>!r.bridge&&r.length>300),p=road.points[8],c=new AmbulanceDemoController(map);
+  const city=createCityMap(),map=city.userData,road=map.roads.find(r=>!r.bridge&&r.length>150),p=road.points[8],c=new AmbulanceDemoController(map);
   c.start(road.a,'accident',{x:p.x,z:p.z,roadId:road.id,along:p.distance});
   while(c.phase==='outbound')c.tick(.25);
   assert.equal(c.phase,'at-incident');assert.ok(Math.hypot(c.pose.x-p.x,c.pose.z-p.z)<.001);

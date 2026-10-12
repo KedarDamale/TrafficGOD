@@ -68,10 +68,10 @@ export function chooseLocations(map){
 const CARS=['baleno','nexon','punch','fronx','wagon-r','dzire','creta','swift','scorpio','ertiga'];
 const BIKES=['splendor-plus','activa','jupiter','shine','pulsar','apache','hf-deluxe','classic-350','access-125','xl100'];
 const TRUCKS=['delivery-truck','tipper-truck','tanker-truck'];
-/** Persistent citywide mixed traffic. Vehicles follow curved centerlines and stop/yield by road approach. */
+/** Lane queues and coordinated junction release; vehicles never leave the asphalt to yield. */
 export class CivilianTraffic {
-  constructor(map,route=[],count=3600){
-    this.nodes=new Map(map.nodes.map(n=>[n.id,n]));this.agents=[];this.seed=912;this.yielding=0;
+  constructor(map,route=[],count=TRAFFIC_COUNT){
+    this.nodes=new Map(map.nodes.map(n=>[n.id,n]));this.agents=[];this.seed=912;this.yielding=0;this.junctionLocks=new Map();
     this.roads=map.roads.map((r,i)=>{
       if(r.points)return r;
       const a=this.nodes.get(r.a),b=this.nodes.get(r.b),length=Math.hypot(b.x-a.x,b.z-a.z);
@@ -79,61 +79,120 @@ export class CivilianTraffic {
     });
     this.lookup=new Map(this.roads.map(r=>[r.id,r]));this.outgoing=new Map();
     for(const n of map.nodes)this.outgoing.set(n.id,this.roads.filter(r=>r.a===n.id||(!r.oneWay&&r.b===n.id)));
+    const schedule=[];
+    if(count>=this.roads.length){
+      const weights=this.roads.map(r=>r.length*(r.oneWay?1:r.lanes===1?1.4:r.lanes)),total=weights.reduce((s,w)=>s+w,0);
+      const quotas=weights.map(w=>1+Math.floor((count-this.roads.length)*w/total));
+      for(let i=quotas.reduce((s,n)=>s+n,0);i<count;i++)quotas[i%quotas.length]++;
+      for(let layer=0;schedule.length<count;layer++)this.roads.forEach((r,i)=>{if(layer<quotas[i])schedule.push(r);});
+    }
+    const roadCounts=new Map();
     for(let i=0;i<count;i++){
-      const road=this.roads[i%this.roads.length],reverse=!road.oneWay&&Math.floor(i/this.roads.length)%2===1;
-      let kind=i%20<12?'bike':i%20<19?'car':'truck';if(road.lanes===1&&kind==='truck')kind='car';
-      const model=kind==='bike'?BIKES[i%BIKES.length]:kind==='car'?CARS[(i+Math.floor(i/20))%CARS.length]:TRUCKS[i%TRUCKS.length];
-      const agent={id:i,road:road.id,a:reverse?road.b:road.a,b:reverse?road.a:road.b,t:this.random()*.95,speed:kind==='bike'?7+this.random()*4:5+this.random()*4,kind,model,colorIndex:(i+Math.floor(i/this.roads.length))%6,lane:i%2,offset:0,stopped:false,pose:null};
+      const road=schedule[i]||this.roads[i%this.roads.length],layer=roadCounts.get(road.id)||0,reverse=!road.oneWay&&layer%2===1;
+      roadCounts.set(road.id,layer+1);
+      const mix=(i+layer*7)%20;
+      let kind=mix<12?'bike':mix<19?'car':'truck';if(road.lanes===1&&kind==='truck')kind='car';
+      const model=kind==='bike'?BIKES[(i+layer)%BIKES.length]:kind==='car'?CARS[(i+layer)%CARS.length]:TRUCKS[(i+layer)%TRUCKS.length];
+      const speed=kind==='bike'?8+this.random()*3:6+this.random()*3;
+      const agent={id:i,road:road.id,a:reverse?road.b:road.a,b:reverse?road.a:road.b,t:0,speed,velocity:speed,kind,model,colorIndex:(i+layer)%6,lane:Math.floor(layer/2)%2,offset:0,stopped:false,pose:null,turn:null,nextRoad:null};
       agent.offset=this.laneOffset(agent,road);this.agents.push(agent);
     }
+    // Separate vehicles within each lane rather than randomly spawning overlaps.
+    const lanes=new Map();
+    for(const a of this.agents){const key=this.laneKey(a);if(!lanes.has(key))lanes.set(key,[]);lanes.get(key).push(a);}
+    for(const list of lanes.values())list.forEach((a,i)=>{a.t=(i+.25)/list.length*.88;});
   }
   random(){this.seed=(1664525*this.seed+1013904223)>>>0;return this.seed/4294967296;}
   laneOffset(agent,road){
-    if(road.lanes===1)return agent.kind==='bike'?(agent.id%2?-1.85:1.85):0;
-    if(agent.kind==='bike')return road.lanes===4?(agent.id%2?3.5:7.3):3.8;
-    return road.lanes===4?(agent.lane?5.25:1.75):1.9;
+    if(road.lanes===1)return agent.kind==='bike'?(agent.id%2?-1.6:1.6):0;
+    if(agent.kind==='bike')return road.lanes===4?(agent.lane?7.1:3.3):3.5;
+    return road.lanes===4?(agent.lane?5.25:1.75):1.75;
+  }
+  laneKey(agent,road=this.lookup.get(agent.road)){
+    const lane=road.lanes===4?agent.lane:road.lanes===1&&agent.kind==='bike'?Math.sign(agent.offset):0;
+    return agent.a+'>'+agent.b+':'+(agent.kind==='bike'?'bike':'motor')+':'+lane;
+  }
+  roadPose(road,a,along,offset){
+    const reverse=a!==road.a,p=sampleRoad(road,reverse?road.length-along:along),heading=p.heading+(reverse?Math.PI:0);
+    return {x:p.x+Math.cos(heading)*offset,z:p.z-Math.sin(heading)*offset,y:road.bridge?.5:.16,heading};
+  }
+  planExit(agent,controller){
+    const exits=this.outgoing.get(agent.b)||[],alternatives=exits.filter(r=>r.id!==agent.road);
+    let choices=alternatives.length?alternatives:exits;
+    const priority=controller.priorities.get(agent.b);
+    const corridor=choices.filter(r=>priority?.roads?.includes(r.id));
+    if(corridor.length)choices=corridor;
+    if(!choices.some(r=>r.id===agent.nextRoad))agent.nextRoad=choices[Math.floor(this.random()*choices.length)]?.id||null;
+    return this.lookup.get(agent.nextRoad);
+  }
+  startTurn(agent,road,next,turnDistance){
+    const start=this.roadPose(road,agent.a,road.length-turnDistance,agent.offset),node=agent.b;
+    const nextB=next.a===node?next.b:next.a,endAlong=Math.min(12,next.length*.2);
+    const endOffset=this.laneOffset(agent,next),end=this.roadPose(next,node,endAlong,endOffset);
+    const handle=Math.max(6,Math.hypot(end.x-start.x,end.z-start.z)*.5);
+    const c1={x:start.x+Math.sin(start.heading)*handle,z:start.z+Math.cos(start.heading)*handle};
+    const c2={x:end.x-Math.sin(end.heading)*handle,z:end.z-Math.cos(end.heading)*handle};
+    const points=[];let length=0;
+    for(let i=0;i<=24;i++){
+      const t=i/24,u=1-t;
+      const p={x:u*u*u*start.x+3*u*u*t*c1.x+3*u*t*t*c2.x+t*t*t*end.x,z:u*u*u*start.z+3*u*u*t*c1.z+3*u*t*t*c2.z+t*t*t*end.z};
+      if(i)length+=Math.hypot(p.x-points[i-1].x,p.z-points[i-1].z);
+      points.push({...p,distance:length});
+    }
+    agent.turn={node,path:{points,length},along:0,startY:start.y,endY:end.y,endHeading:end.heading};
+    this.junctionLocks.set(node,agent.id);
+    agent.a=node;agent.b=nextB;agent.road=next.id;agent.t=endAlong/next.length;agent.offset=endOffset;agent.nextRoad=null;
+  }
+  advanceTurn(agent,delta){
+    const turn=agent.turn;turn.along=Math.min(turn.path.length,turn.along+Math.max(3,agent.velocity)*delta);
+    const p=sampleRoad(turn.path,turn.along),fraction=turn.path.length?turn.along/turn.path.length:1;
+    agent.pose={x:p.x,z:p.z,y:turn.startY+(turn.endY-turn.startY)*fraction,heading:p.heading};agent.stopped=false;
+    if(turn.along>=turn.path.length){agent.pose.heading=turn.endHeading;this.junctionLocks.delete(turn.node);agent.turn=null;}
   }
   tick(dt,controller){
     const delta=dt*controller.timeScale;this.yielding=0;
-    const buckets=new Map(),leaders=new Map();
+    const buckets=new Map(),leaders=new Map(),entries=new Map();
     for(const a of this.agents){
-      const road=this.lookup.get(a.road),lane=road.lanes===4?a.lane:road.lanes===1&&a.kind==='bike'?Math.sign(a.offset):0;
-      const key=a.a+'>'+a.b+':'+(a.kind==='bike'?'bike':'motor')+':'+lane;
-      if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(a);
+      const key=this.laneKey(a);if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(a);
+      const distance=a.t*this.lookup.get(a.road).length;
+      entries.set(key,Math.min(entries.get(key)??Infinity,distance));
     }
     for(const list of buckets.values()){
       list.sort((a,b)=>b.t-a.t);
       for(let i=1;i<list.length;i++)leaders.set(list[i].id,list[i-1]);
     }
     for(const agent of this.agents){
-      let road=this.lookup.get(agent.road),reverse=agent.a!==road.a;
-      const sample=sampleRoad(road,(reverse?1-agent.t:agent.t)*road.length),heading=sample.heading+(reverse?Math.PI:0),b=this.nodes.get(agent.b);
-      const priority=controller.priorities.get(b.id),axis=Math.abs(Math.sin(heading))>Math.abs(Math.cos(heading))?'x':'z',normal=Math.floor(controller.clock/12)%2?'z':'x';
+      if(agent.turn){this.advanceTurn(agent,delta);continue;}
+      const road=this.lookup.get(agent.road),b=this.nodes.get(agent.b),pose=this.roadPose(road,agent.a,agent.t*road.length,agent.offset);
+      const priority=controller.priorities.get(b.id),axis=Math.abs(Math.sin(pose.heading))>Math.abs(Math.cos(pose.heading))?'x':'z',normal=Math.floor(controller.clock/12)%2?'z':'x';
       const green=priority?(priority.roads?priority.roads.includes(road.id):priority.axis===axis):normal===axis;
-      const red=b.signal!==null&&!green,close=controller.pose&&Math.hypot(controller.pose.x-sample.x,controller.pose.z-sample.z)<55&&['outbound','returning'].includes(controller.phase);
-      const leader=leaders.get(agent.id),gap=agent.kind==='bike'?3.8:agent.kind==='truck'?10:7;
-      const queued=leader&&leader.a===agent.a&&leader.b===agent.b&&(leader.t-agent.t)*road.length<gap;
-      const stopDistance=agent.kind==='bike'?12:18;
-      agent.stopped=!!close||!!queued||(red&&(1-agent.t)*road.length<stopDistance+2);
+      // Preemption also stops crossing traffic at junctions without a normal signal.
+      const red=(!!priority||b.signal!=null)&&!green;
+      const gap=agent.kind==='bike'?4:agent.kind==='truck'?11:7.5,stopDistance=agent.kind==='bike'?14:18;
+      const turnDistance=Math.min(12,road.length*.2),next=this.planExit(agent,controller);
+      const nextAgent=next?{...agent,a:agent.b,b:next.a===agent.b?next.b:next.a,offset:this.laneOffset(agent,next)}:null;
+      const entryGap=next?entries.get(this.laneKey(nextAgent,next))??Infinity:0;
+      const blocked=!next||entryGap<Math.min(12,next.length*.2)+gap||this.junctionLocks.has(agent.b);
+      const distanceToEnd=(1-agent.t)*road.length,leader=leaders.get(agent.id);
+      const queued=leader&&leader.road===agent.road&&leader.a===agent.a&&leader.b===agent.b&&(leader.t-agent.t)*road.length<gap+.5;
+      agent.stopped=!!queued||((red||blocked)&&distanceToEnd<=stopDistance+.1);
+      const targetSpeed=agent.stopped?0:priority&&green?Math.max(agent.speed,agent.kind==='truck'?11:14):agent.speed;
+      agent.velocity+=Math.max(-5*delta,Math.min(2*delta,targetSpeed-agent.velocity));
+      const weave=agent.kind==='bike'?Math.sin(controller.clock*.4+agent.id)*.08:0;
+      const margin=agent.kind==='bike'?.65:agent.kind==='truck'?1.6:1.3,maxOffset=Math.max(0,road.width/2-margin);
+      const desired=Math.max(-maxOffset,Math.min(maxOffset,this.laneOffset(agent,road)+weave));
+      agent.offset+=(desired-agent.offset)*Math.min(1,dt*4);
+      let along=agent.t*road.length+(agent.stopped?0:agent.velocity*delta);
+      if(red||blocked)along=Math.min(along,Math.max(agent.t*road.length,road.length-stopDistance));
+      if(leader&&leader.road===agent.road&&leader.a===agent.a&&leader.b===agent.b&&leader.t>agent.t)along=Math.min(along,Math.max(agent.t*road.length,leader.t*road.length-gap));
+      agent.t=Math.min(1,along/road.length);
       if(agent.stopped)this.yielding++;
-      const weave=agent.kind==='bike'?Math.sin(controller.clock*.4+agent.id)*.10:0;
-      const desiredOffset=close?(road.width/2+1.4)*(agent.offset<0?-1:1):this.laneOffset(agent,road)+weave;
-      agent.offset+=(desiredOffset-agent.offset)*Math.min(1,dt*5);
-      if(!agent.stopped){
-        let next=agent.t+agent.speed*delta/road.length;
-        if(red)next=Math.min(next,Math.max(0,1-stopDistance/road.length));
-        if(leader&&leader.a===agent.a&&leader.b===agent.b&&leader.t>agent.t)next=Math.min(next,Math.max(agent.t,leader.t-gap/road.length));
-        agent.t=next;
-      }
-      if(agent.t>=1){
-        const outgoing=this.outgoing.get(agent.b),choices=outgoing.filter(r=>r.id!==road.id);
-        const next=(choices.length?choices:outgoing)[Math.floor(this.random()*(choices.length||outgoing.length))];
-        if(next){agent.a=agent.b;agent.b=next.a===agent.a?next.b:next.a;agent.road=next.id;}
-        else{const departure=this.roads[Math.floor(this.random()*this.roads.length)];agent.a=departure.a;agent.b=departure.b;agent.road=departure.id;}
-        agent.t=0;road=this.lookup.get(agent.road);reverse=agent.a!==road.a;
-      }
-      const p=sampleRoad(road,(reverse?1-agent.t:agent.t)*road.length),angle=p.heading+(reverse?Math.PI:0);
-      agent.pose={x:p.x+Math.cos(angle)*agent.offset,z:p.z-Math.sin(angle)*agent.offset,y:road.bridge?.5:.16,heading:angle};
+      if(!red&&!blocked&&next&&along>=road.length-turnDistance){
+        this.startTurn(agent,road,next,turnDistance);
+        // Reserve room in the exit before another vehicle enters the junction.
+        entries.set(this.laneKey(agent,next),agent.t*next.length);
+        this.advanceTurn(agent,0);
+      }else agent.pose=this.roadPose(road,agent.a,agent.t*road.length,agent.offset);
     }
   }
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createBuilding, disposeBuilding } from '../buildings/index.js';
+import { createBuilding, disposeBuilding, getBuildingSpec } from '../buildings/index.js';
 import { CITY_BOUNDS,CITY_PARK,CITY_LAKE,CITY_AREA_FRACTION,PENINSULA,MAINLAND,isLand,isLake,isForest,seededRandom } from '../../simulation/city-layout.js';
 import { createRoadNetwork,sampleRoad,nearestRoad,distance } from '../../simulation/road-network.js';
 export { CITY_SCALE,CITY_AREA_FRACTION } from '../../simulation/city-layout.js';
@@ -87,7 +87,9 @@ export function createCityMap() {
         const yaw=Math.atan2(p.x-x,p.z-z),scale=1.5,entry={x:x+Math.sin(yaw)*17,z:z+Math.cos(yaw)*17};
         const toA=along<road.length/2,tail=toA?road.points.filter(q=>q.distance<along).reverse():road.points.filter(q=>q.distance>along);
         const connector=[entry,{x:p.x,z:p.z,roadId:road.id},...tail.map(q=>({x:q.x,z:q.z,...(q.node?{id:q.node}:{}),roadId:road.id}))];
-        poi={id:type+':'+district,type,district,x,z,yaw,scale,roadNode:toA?road.a:road.b,entrance:entry,connector};
+        const name=district+' '+({'hospital':'Rugnalaya','fire-station':'Agnishaman Kendra','police-station':'Police Thane'}[type]);
+        const spec=getBuildingSpec(type);
+        poi={id:type+':'+district,name,type,district,x,z,yaw,scale,width:spec.width*scale,depth:spec.depth*scale,height:spec.height*scale,roadId:road.id,roadName:road.name,roadNode:toA?road.a:road.b,entrance:entry,connector};
       }
       if(!poi)throw new Error('Could not place '+type+' in '+district);
       services.push(poi);
@@ -107,6 +109,8 @@ export function createCityMap() {
   }
   for(const [color,list] of detailed){const g=mergeGeometries(list,false);list.forEach(g=>g.dispose());const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:'#'+color,roughness:.9,flatShading:true}));m.name='service-buildings';city.add(m);}
   const occupied=new Map(),colors=['#e4e9e6','#e0e7e9','#ede8dc','#d6e1e0','#d9e2e8'];
+  const buildingNames=['Shivkrupa','Sahyadri','Matoshri','Shivneri','Rajgad','Raigad','Pratapgad','Tulsi','Ganesh','Gokul','Vrindavan','Saraswati','Sukhshanti','Anand','Samarth','Mauli','Jijau','Vitthal','Dnyaneshwar','Chaitanya','Mangal','Nandadeep','Pragati','Yashwant'];
+  const nameCounts=new Map();
   function placeHouse(x,z,w,d,h,yaw,style){
     const r=Math.hypot(w,d)/2;
     if(!isLand(x,z)||!isLand(x-r,z)||!isLand(x+r,z)||!isLand(x,z-r)||!isLand(x,z+r)||isLake(x,z)||isForest(x,z)||services.some(s=>Math.hypot(s.x-x,s.z-z)<38+r))return false;
@@ -121,7 +125,10 @@ export function createCityMap() {
     instance('box','#b3c9d4',[front.x,h*.54,front.z],[w*.68,h*.45,.06],yaw);
     if(style==='apartment')for(let floor=3;floor<h;floor+=4)instance('box','#dae4e5',[front.x,floor,front.z],[w*.75,.18,1.3],yaw);
     if(style==='bungalow')instance('box','#e6ebe2',[front.x,2.3,front.z],[w*.55,.12,2],yaw);
-    buildingPlots.push({x,z,width:w,depth:d,height:h,radius:r,yaw,style});buildingCount++;return true;
+    const index=buildingPlots.length,suffix=style==='bungalow'?'Niwas':style==='warehouse'?'Godam':['Sadan','Sankul','Apartments','Heights'][Math.floor(index/buildingNames.length)%4];
+    const baseName=buildingNames[index%buildingNames.length]+' '+suffix,count=(nameCounts.get(baseName)||0)+1;nameCounts.set(baseName,count);
+    const name=baseName+(count>1?' · Wing '+count:'');
+    buildingPlots.push({id:'B'+String(index+1).padStart(4,'0'),name,district:near.road.district,roadId:near.road.id,roadName:near.road.name,x,z,width:w,depth:d,height:h,radius:r,yaw,style});buildingCount++;return true;
   }
   for(const road of roads){
     if(road.bridge)continue;
