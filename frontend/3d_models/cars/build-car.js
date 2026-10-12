@@ -31,7 +31,7 @@ export function buildCar(root, s) {
   box(root, '#28333e', [0, base - .08, L * .489], [W * .49, .18, .04], 'grille');
   box(root, '#e7ebdf', [0, base - .1, -L * .489], [.38, .11, .025], 'number-plate');
   box(root, '#28333e', [.32, base + .17, .1], [.35, .18, .38], 'driver-seat');
-  occupant(root, [.32, base + .23, .08], false, !!s.emergency);
+  occupant(root, [.32, base + .2, .08], false, !!s.emergency).scale.setScalar(.78);
   cylinder(root, '#26313d', [.32, base + .4, .48], .12, .025, 'steering-wheel', 'z');
   if (rugged) for (const side of [-1, 1]) box(root, '#26313d', [side * W * .48, .44, 0], [.06, .13, L * .65], 'side-cladding');
   if (['suv', 'rugged', 'mpv'].includes(s.style)) for (const side of [-1, 1]) box(root, '#aab7bb', [side * W * .33, H + .06, -.35], [.055, .055, L * .42], 'roof-rail');

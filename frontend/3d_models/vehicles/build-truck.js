@@ -19,7 +19,7 @@ export function buildTruck(root, s) {
   box(root, '#8bcee0', [0, 1.7, cabZ + .92], [W * .85, cabH - 1.42, .03], 'windshield', true);
   box(root, '#2b3642', [0, .9, cabZ + 1], [.94, .26, .04], 'grille');
   box(root, '#c0c9ca', [0, .69, cabZ + 1.01], [W * .94, .13, .12], 'bumper');
-  occupant(root, [.48, 1.35, cabZ + .05], false, !!s.emergency);
+  occupant(root, [.48, 1.35, cabZ + .05], false, !!s.emergency).scale.setScalar(s.style === 'ambulance' ? .65 : 1);
   cylinder(root, '#26313d', [.48, 1.53, cabZ + .5], .15, .03, 'steering-wheel', 'z');
   const cargo = new THREE.Group(); cargo.name = s.articulated ? 'trailer-pivot' : 'cargo';
   cargo.position.z = s.articulated ? cabZ - 1.9 : 0; root.add(cargo);

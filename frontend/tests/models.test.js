@@ -26,6 +26,19 @@ test('all 29 models have finite, road-level geometry and exactly one occupant', 
   }
 });
 
+test('all enclosed occupants fit below their cabin roofs', () => {
+  for (const spec of VEHICLES) {
+    const v = createVehicle(spec.id);
+    const roof = v.getObjectByName('roof') || v.getObjectByName('cab-roof');
+    if (roof) {
+      const personBounds = new THREE.Box3().setFromObject(v.userData.occupants[0]);
+      const roofBounds = new THREE.Box3().setFromObject(roof);
+      assert.ok(personBounds.max.y <= roofBounds.min.y, `${spec.id}: occupant clips roof`);
+    }
+    disposeVehicle(v);
+  }
+});
+
 test('six paints change civilian body colors and service liveries remain fixed', () => {
   for (const spec of VEHICLES) for (let i = 0; i < 6; i++) {
     const model = createVehicle(spec.id, { colorIndex: i });

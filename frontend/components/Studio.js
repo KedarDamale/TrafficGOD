@@ -24,7 +24,7 @@ function Scene({ selected, paint, view, moving, sirens, onStats, onReady, onErro
     camera.position.set(72, 78, 85);
     const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
     controls.maxPolarAngle = Math.PI * .47; controls.minPolarAngle = .12; controls.enablePan = true;
-    controls.minZoom = .4; controls.maxZoom = 6;
+    controls.minZoom = .4; controls.maxZoom = 24;
     scene.add(new THREE.HemisphereLight('#ffffff', '#b4bdc9', 2.5));
     const sun = new THREE.DirectionalLight('#fff9ed', 3); sun.position.set(-45, 70, 35); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.left = -70; sun.shadow.camera.right = 70;
@@ -54,13 +54,19 @@ function Scene({ selected, paint, view, moving, sirens, onStats, onReady, onErro
         if (model) disposeVehicle(model);
         model = createVehicle(st.selected, { colorIndex: st.paint }); scene.add(model); active.current = model;
         previousId = st.selected; previousPaint = st.paint;
+        if (st.view === 'vehicle') previousView = '';
         let triangles = 0, meshes = 0; model.traverse(o => { if (o.isMesh) { meshes++; triangles += (o.geometry.index?.count ?? o.geometry.attributes.position.count) / 3; } });
         onStats({ triangles, meshes, occupants: model.userData.occupants.length });
       }
       if (previousView !== st.view) {
         const map = st.view === 'city'; city.visible = map; traffic.forEach(v => v.visible = map); pedestal.visible = !map;
         if (map) { camera.position.set(72, 78, 85); controls.target.set(0, 0, 0); camera.zoom = 1; }
-        else { camera.position.set(13, 10, 17); controls.target.set(0, 1, 0); camera.zoom = 4.1; }
+        else {
+          const length = model.userData.dimensions.length;
+          camera.position.set(13, 10, 17); controls.target.set(0, 1, 0);
+          camera.zoom = Math.max(4.1, Math.min(12, 32 / length));
+          pedestal.scale.setScalar(length < 3 ? .4 : length < 5 ? .64 : 1.1);
+        }
         camera.updateProjectionMatrix(); controls.update(); previousView = st.view;
       }
       model.visible = st.view === 'vehicle';
@@ -78,7 +84,7 @@ function Scene({ selected, paint, view, moving, sirens, onStats, onReady, onErro
     };
     tick();
     const api = {
-      zoom: amount => { camera.zoom = THREE.MathUtils.clamp(camera.zoom * amount, .4, 6); camera.updateProjectionMatrix(); },
+      zoom: amount => { camera.zoom = THREE.MathUtils.clamp(camera.zoom * amount, .4, 24); camera.updateProjectionMatrix(); },
       reset: () => { previousView = ''; },
       export: async () => {
         if (!active.current) return;
