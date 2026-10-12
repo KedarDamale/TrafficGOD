@@ -1,6 +1,6 @@
 import { nearestNode,findRoute,routeLength } from './graph.js';
 import { expandRoute,sampleRoad } from './road-network.js';
-export const TRAFFIC_COUNT = 2000;
+export const TRAFFIC_COUNT = 5000;
 
 export class AmbulanceDemoController {
   constructor(map){this.map=map;this.nodes=new Map(map.nodes.map(n=>[n.id,n]));this.timeScale=6;this.speed=12;this.reset();}
