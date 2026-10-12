@@ -84,6 +84,8 @@ The 3D view requires WebGL 2. If graphics cannot start, enable graphics accelera
 
 ## Deployment
 
+Live simulation: [trafficgod.vercel.app](https://trafficgod.vercel.app).
+
 Vercel configuration is in [vercel.json](vercel.json). Deploy from the repository root with the Vercel CLI:
 
     vercel deploy --prod --yes
