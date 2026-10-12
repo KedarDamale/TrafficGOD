@@ -14,7 +14,7 @@ export function findRoute(nodes,startId,endId) {
     closed.add(id);
     for(const neighbor of lookup.get(id).neighbors) {
       if(closed.has(neighbor))continue;
-      const nextCost=cost.get(id)+distance(lookup.get(id),lookup.get(neighbor));
+      const nextCost=cost.get(id)+(lookup.get(id).costs?.[neighbor]??distance(lookup.get(id),lookup.get(neighbor)));
       if(!cost.has(neighbor)||nextCost<cost.get(neighbor)){previous.set(neighbor,id);cost.set(neighbor,nextCost);if(!open.includes(neighbor))open.push(neighbor);}
     }
   }

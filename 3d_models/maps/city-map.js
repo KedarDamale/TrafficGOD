@@ -1,190 +1,163 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { BUILDINGS, createBuilding, disposeBuilding } from '../buildings/index.js';
-export { createNeighborhoodMap, disposeNeighborhoodMap } from './neighborhood.js';
+import { createBuilding, disposeBuilding } from '../buildings/index.js';
+import { CITY_SCALE as S,CITY_AREA_FRACTION,PENINSULA,MAINLAND,isLand,isLake,isForest,seededRandom } from '../../simulation/city-layout.js';
+import { createRoadNetwork,sampleRoad,nearestRoad,distance } from '../../simulation/road-network.js';
+export { CITY_SCALE,CITY_AREA_FRACTION } from '../../simulation/city-layout.js';
+export { createNeighborhoodMap,disposeNeighborhoodMap } from './neighborhood.js';
 
-export const CITY_AREA_FRACTION = .08;
-export const CITY_SCALE = Math.sqrt(CITY_AREA_FRACTION);
-
-// A fictional Mumbai-inspired peninsula and mainland, not surveyed OSM geography.
-const PENINSULA = [[-3500,-11500],[1300,-11500],[2000,-9300],[1600,-7000],[1400,-5300],[800,-3800],[1400,-2400],[900,-500],[1200,1200],[500,3000],[600,4300],[-100,5600],[100,6500],[-600,8600],[-1200,10700],[-2000,11200],[-2300,9500],[-2800,7200],[-2400,4800],[-3000,2900],[-3300,600],[-3700,-1200],[-3300,-3400],[-4000,-5800],[-3500,-7900],[-3900,-9300]].map(([x,z])=>[x*CITY_SCALE,z*CITY_SCALE]);
-const MAINLAND = [[2500,-11500],[5700,-11500],[5700,6000],[5200,6000],[4500,4000],[3800,2800],[3200,1000],[2800,-1400],[2100,-3700],[2600,-6100],[2000,-8800]].map(([x,z])=>[x*CITY_SCALE,z*CITY_SCALE]);
-function inside(x,z,polygon) {
-  let result=false;
-  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++) {
-    const [xi,zi]=polygon[i],[xj,zj]=polygon[j];
-    if((zi>z)!==(zj>z) && x<(xj-xi)*(z-zi)/(zj-zi)+xi) result=!result;
+function ribbon(points,width,y) {
+  const vertices=[];
+  for(let i=1;i<points.length;i++){
+    const a=points[i-1],b=points[i],before=points[Math.max(0,i-2)],after=points[Math.min(points.length-1,i+1)];
+    const normal=p=>{const length=Math.hypot(p.x,p.z);return{x:p.z/length*width/2,z:-p.x/length*width/2};};
+    const na=normal({x:b.x-before.x,z:b.z-before.z}),nb=normal({x:after.x-a.x,z:after.z-a.z});
+    const v=[[a.x-na.x,y,a.z-na.z],[a.x+na.x,y,a.z+na.z],[b.x+nb.x,y,b.z+nb.z],[b.x-nb.x,y,b.z-nb.z]];
+    vertices.push(...v[0],...v[2],...v[1],...v[0],...v[3],...v[2]);
   }
-  return result;
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));g.computeVertexNormals();return g;
 }
-const land=(x,z)=>inside(x,z,PENINSULA)||inside(x,z,MAINLAND);
-const lake=(x,z)=>((x-400*CITY_SCALE)/(650*CITY_SCALE))**2+((z+6100*CITY_SCALE)/(450*CITY_SCALE))**2<1;
-const forest=(x,z)=>((x+1200*CITY_SCALE)/(1350*CITY_SCALE))**2+((z+8900*CITY_SCALE)/(2000*CITY_SCALE))**2<1;
-function random(seed) {let v=seed>>>0;return()=>{v=(1664525*v+1013904223)>>>0;return v/4294967296;};}
-
-/** Compact deterministic base map at 8% of the previous footprint. Road graph and service metadata power the demo controller. */
+/** Compact 150-street coastal city, with curved roads and distinct one/two/four-lane profiles. */
 export function createCityMap() {
   const city=new THREE.Group();city.name='mumbai-inspired-city';
-  const rand=random(721), batches=new Map(), nodes=[], roads=[], cells=[], services=[];
+  const {nodes,roads}=createRoadNetwork(),rand=seededRandom(721),batches=new Map(),surfaces=new Map();
+  const geometries={box:new THREE.BoxGeometry(1,1,1),crown:new THREE.IcosahedronGeometry(1,0),lens:new THREE.SphereGeometry(1,6,3),disc:new THREE.CylinderGeometry(1,1,1,12)};
   const roofShape=new THREE.Shape();roofShape.moveTo(-.5,0);roofShape.lineTo(0,1);roofShape.lineTo(.5,0);roofShape.closePath();
-  const gable=new THREE.ExtrudeGeometry(roofShape,{depth:1,bevelEnabled:false});gable.translate(0,0,-.5);
-  const geometries={box:new THREE.BoxGeometry(1,1,1),gable,crown:new THREE.IcosahedronGeometry(1,0),lens:new THREE.SphereGeometry(1,6,3)};
+  geometries.gable=new THREE.ExtrudeGeometry(roofShape,{depth:1,bevelEnabled:false});geometries.gable.translate(0,0,-.5);
   const transform=new THREE.Object3D();
-  function instance(kind,color,pos,size,angle=0) {
-    const key=`${kind}:${color}:${Math.floor(pos[0]/1800)}:${Math.floor(pos[2]/1800)}`;
-    if(!batches.has(key)) batches.set(key,{kind,color,matrices:[]});
-    transform.position.set(...pos);transform.scale.set(...size);transform.rotation.set(0,angle,0);transform.updateMatrix();
-    batches.get(key).matrices.push(transform.matrix.clone());
+  function instance(kind,color,pos,size,angle=0){
+    const key=[kind,color,Math.floor(pos[0]/600),Math.floor(pos[2]/600)].join(':');
+    if(!batches.has(key))batches.set(key,{kind,color,matrices:[]});
+    transform.position.set(...pos);transform.scale.set(...size);transform.rotation.set(0,angle,0);transform.updateMatrix();batches.get(key).matrices.push(transform.matrix.clone());
   }
-  function segment(a,b,width,y,color,name='road') {
-    const dx=b.x-a.x,dz=b.z-a.z,length=Math.hypot(dx,dz);
-    instance('box',color,[(a.x+b.x)/2,y,(a.z+b.z)/2],[width,.08,length],Math.atan2(dx,dz));
+  function surface(g,color){
+    if(!surfaces.has(color))surfaces.set(color,[]);surfaces.get(color).push(g);
   }
-  function polygon(points,color,y,name) {
+  function polygon(points,color,y,name){
     const shape=new THREE.Shape();points.forEach(([x,z],i)=>i?shape.lineTo(x,-z):shape.moveTo(x,-z));shape.closePath();
     const g=new THREE.ShapeGeometry(shape);g.rotateX(-Math.PI/2);
     const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:3}));m.position.y=y;m.name=name;m.receiveShadow=true;city.add(m);
   }
-  const sea=new THREE.Mesh(new THREE.PlaneGeometry(20000,20000),new THREE.MeshStandardMaterial({color:'#a9c9dc',roughness:1}));sea.rotation.x=-Math.PI/2;sea.position.y=-.12;sea.name='arabian-sea-and-harbor';city.add(sea);
-  polygon(PENINSULA,'#eef0ec',.02,'peninsula');polygon(MAINLAND,'#ecefe9',.02,'mainland');
-  const park=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#c5d7be',roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));park.rotation.x=-Math.PI/2;park.position.set(-1200*CITY_SCALE,.07,-8900*CITY_SCALE);park.scale.set(1350*CITY_SCALE,2000*CITY_SCALE,1);park.name='northern-forest';city.add(park);
-  const water=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#91bcd4',roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));water.rotation.x=-Math.PI/2;water.position.set(400*CITY_SCALE,.08,-6100*CITY_SCALE);water.scale.set(650*CITY_SCALE,450*CITY_SCALE,1);water.name='inland-lake';city.add(water);
-  const STEP=160, X=-5000*CITY_SCALE, Z=-11520*CITY_SCALE, COLS=Math.ceil(60*CITY_SCALE*180/STEP), ROWS=Math.ceil(128*CITY_SCALE*180/STEP), lookup=new Map();
-  for(let i=0;i<=COLS;i++)for(let j=0;j<=ROWS;j++) {
-    const x=X+i*STEP,z=Z+j*STEP;
-    if(!land(x,z)||lake(x,z)||forest(x,z)) continue;
-    const n={id:`${i}:${j}`,x,z,i,j,neighbors:[],signal:null};lookup.set(n.id,n);nodes.push(n);
+  const sea=new THREE.Mesh(new THREE.PlaneGeometry(20000,20000),new THREE.MeshStandardMaterial({color:'#b4cfde',roughness:1}));sea.rotation.x=-Math.PI/2;sea.position.y=-.15;sea.name='sea-and-harbor';city.add(sea);
+  polygon(PENINSULA,'#edf0eb',.02,'peninsula');polygon(MAINLAND,'#e9eee8',.02,'mainland');
+  for(const [name,x,z,rx,rz,color] of [['forest',-1200,-8900,1350,2000,'#c7d9c0'],['lake',400,-6100,650,450,'#93bed5']]){
+    const m=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color,roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));
+    m.rotation.x=-Math.PI/2;m.position.set(x*S,.07,z*S);m.scale.set(rx*S,rz*S,1);m.name=name;city.add(m);
   }
-  function connect(a,b,arterial=false,bridge=false) {
-    const width=arterial?26:18;
-    roads.push({a:a.id,b:b.id,width,arterial,bridge,length:Math.hypot(a.x-b.x,a.z-b.z)});a.neighbors.push(b.id);b.neighbors.push(a.id);
+  let treeCount=0,buildingCount=0;
+  function tree(x,z,size=5){
+    instance('box','#a5b7aa',[x,size*.48,z],[.5,size,.5]);
+    instance('crown','#b2c8b7',[x,size*1.25,z],[size*.65,size*.8,size*.65]);treeCount++;
   }
-  function drawRoad(a,b,width,arterial,bridge) {
-    segment(a,b,width,bridge?.4:.07,arterial?'#ced7de':'#d8dfe3');
-    if(arterial) segment(a,b,.25,bridge?.47:.13,'#f4f4e9');
-    if(bridge) {
-      const distance=Math.hypot(a.x-b.x,a.z-b.z),count=Math.floor(distance/140);
-      for(let k=1;k<count;k++){const t=k/count,x=a.x+(b.x-a.x)*t,z=a.z+(b.z-a.z)*t;instance('box','#b9c8cf',[x,-1,z],[3,3,4]);}
-      for(const side of [-1,1]) {const dx=b.x-a.x,dz=b.z-a.z,d=Math.hypot(dx,dz);segment({x:a.x+side*dz/d*10,z:a.z-side*dx/d*10},{x:b.x+side*dz/d*10,z:b.z-side*dx/d*10},.8,1.4,'#b7c8d1');}
+  for(const road of roads){
+    const y=road.bridge?.5:.14;
+    surface(ribbon(road.points,road.width+3,.095),'#e2e7e5');
+    surface(ribbon(road.points,road.width,y),road.lanes===4?'#c4d1d9':road.lanes===1?'#dce0d8':'#d1dbe0');
+    if(road.lanes>1)for(let along=14;along<road.length-14;along+=14){
+      const p=sampleRoad(road,along);
+      for(const offset of road.lanes===4?[-3.5,0,3.5]:[0])instance('box',offset===0&&road.lanes===4?'#ebe2ba':'#f5f5ea',[p.x+Math.cos(p.heading)*offset,y+.012,p.z-Math.sin(p.heading)*offset],[.12,.018,5],p.heading);
+    }
+    if(road.bridge)for(let along=20;along<road.length;along+=45){
+      const p=sampleRoad(road,along);instance('box','#adbfca',[p.x,-1,p.z],[2.5,3,3],p.heading);
+      for(const side of [-1,1])instance('box','#a4bccb',[p.x+Math.cos(p.heading)*side*(road.width/2+.4),1.1,p.z-Math.sin(p.heading)*side*(road.width/2+.4)],[.5,1.2,43],p.heading);
+    }
+    if(road.lanes===4)for(let along=30;along<road.length-30;along+=65){
+      const p=sampleRoad(road,along);for(const side of [-1,1])tree(p.x+Math.cos(p.heading)*side*(road.width/2+7),p.z-Math.sin(p.heading)*side*(road.width/2+7),5);
+    }
+    // Each street's signature feature is attached to its own curve.
+    const p=sampleRoad(road,road.length*.54),side=road.width/2+5;
+    if(road.character==='Bazaar lane'){
+      for(let j=0;j<4;j++)instance('box',['#d7a59a','#a7bccb','#d9c796','#abc3a9'][j],[p.x+Math.cos(p.heading)*(side+j*3.5),2.3,p.z-Math.sin(p.heading)*(side+j*3.5)],[3.2,.15,4],p.heading);
+    }else if(road.character==='School street'){
+      instance('box','#d4b572',[p.x+Math.cos(p.heading)*side,1.3,p.z-Math.sin(p.heading)*side],[.5,2.6,.5]);
+    }else if(road.lanes===2){
+      instance('box','#acc5cc',[p.x+Math.cos(p.heading)*side,2,p.z-Math.sin(p.heading)*side],[4,.15,2.5],p.heading);
+      instance('box','#b0c0c6',[p.x+Math.cos(p.heading)*side,1,p.z-Math.sin(p.heading)*side],[3,.2,.7],p.heading);
     }
   }
-  for(const n of nodes) for(const [di,dj] of [[1,0],[0,1]]) {
-    const next=lookup.get(`${n.i+di}:${n.j+dj}`);
-    if(next && land((n.x+next.x)/2,(n.z+next.z)/2)) connect(n,next,di===1?n.j%8===0:n.i%7===0);
-  }
-  const closest=(x,z,predicate=()=>true)=>nodes.filter(predicate).reduce((best,n)=>!best||Math.hypot(n.x-x,n.z-z)<Math.hypot(best.x-x,best.z-z)?n:best,null);
-  const west=closest(-1600*CITY_SCALE,4500*CITY_SCALE,n=>n.x<1500*CITY_SCALE),east=closest(4800*CITY_SCALE,4500*CITY_SCALE,n=>n.x>2500*CITY_SCALE);
-  connect(west,east,true,true);
-  const coastalA=closest(-3100*CITY_SCALE,1200*CITY_SCALE,n=>n.x<0),coastalB=closest(-2500*CITY_SCALE,6600*CITY_SCALE,n=>n.x<0);
-  const via={id:'sea-link',x:-3900*CITY_SCALE,z:4100*CITY_SCALE,neighbors:[],signal:null};nodes.push(via);lookup.set(via.id,via);connect(coastalA,via,true,true);connect(via,coastalB,true,true);
-  // Keep a connected road network so all selectable incidents have a feasible return trip.
-  let largest=new Set(),unvisited=new Set(nodes.map(n=>n.id));
-  while(unvisited.size){
-    const component=new Set(),queue=[unvisited.values().next().value];
-    while(queue.length){const id=queue.pop();if(!unvisited.delete(id))continue;component.add(id);queue.push(...lookup.get(id).neighbors);}
-    if(component.size>largest.size)largest=component;
-  }
-  for(let i=nodes.length-1;i>=0;i--)if(!largest.has(nodes[i].id)){lookup.delete(nodes[i].id);nodes.splice(i,1);}
-  for(let i=roads.length-1;i>=0;i--)if(!largest.has(roads[i].a)||!largest.has(roads[i].b))roads.splice(i,1);
-  for(const road of roads)drawRoad(lookup.get(road.a),lookup.get(road.b),road.width,road.arterial,road.bridge);
-  for(let i=0;i<COLS;i++)for(let j=0;j<ROWS;j++) {
-    const corners=[lookup.get(`${i}:${j}`),lookup.get(`${i+1}:${j}`),lookup.get(`${i}:${j+1}`),lookup.get(`${i+1}:${j+1}`)];
-    if(corners.some(n=>!n)) continue;
-    const x=X+(i+.5)*STEP,z=Z+(j+.5)*STEP;if(!land(x,z)||lake(x,z)||forest(x,z))continue;
-    cells.push({id:`lot:${i}:${j}`,x,z,i,j});
-  }
-  // Every inhabited district receives all three emergency services on separate blocks.
-  const districts=new Map();
-  for(const c of cells) {const id=`${Math.floor(c.i/6)}:${Math.floor(c.j/8)}`;if(!districts.has(id))districts.set(id,[]);districts.get(id).push(c);}
-  const serviceCells=new Set();
-  for(const [district,list] of districts) {
-    const spread=[.2,.5,.8];
-    ['hospital','fire-station','police-station'].forEach((type,k)=>{
-      const c=list[Math.min(list.length-1,Math.floor(list.length*spread[k]))];
-      const offsets=list.length<3?[[-42,-30],[42,-30],[0,40]][k]:[0,0];
-      const x=c.x+offsets[0],z=c.z+offsets[1];
-      serviceCells.add(c.id);services.push({scale:list.length<3?1.3:2.8,id:`${type}:${district}`,type,district,x,z,roadNode:closest(x,z+(list.length<3?20:35)).id,entrance:{x,z:z+(list.length<3?20:35)}});
-    });
-  }
-  let buildingCount=0,treeCount=0;
-  const colors=['#e8ebe8','#e5e9ea','#f0ede4','#dde5e5','#dce3e8','#cbd8df'];
-  function tree(x,z,size=5) {instance('box','#acb8af',[x,size*.48,z],[.55,size,.55]);instance('crown','#b9ccbe',[x,size*1.25,z],[size*.62,size*.85,size*.62]);treeCount++;}
-  for(const c of cells) {
-    instance('box','#f5f5ed',[c.x,.055,c.z],[STEP-18,.07,STEP-18]);
-    if(serviceCells.has(c.id))continue;
-    const small=c.z>4200*CITY_SCALE,industrial=c.x>2800*CITY_SCALE&&c.z>0;
-    for(let i=0;i<3;i++)for(let j=0;j<3;j++) {
-      if(i===1&&j===1&&rand()<.45){tree(c.x,c.z,8);continue;}
-      const x=c.x+(i-1)*48+(rand()-.5)*8,z=c.z+(j-1)*48+(rand()-.5)*8;
-      const w=industrial?30:14+rand()*13,d=industrial?33:14+rand()*14;
-      const h=industrial?10:small?5+rand()*8:8+Math.floor(rand()*8)*4;
-      instance('box',colors[Math.floor(rand()*colors.length)],[x,h/2+.15,z],[w,h,d]);
-      if(small||industrial)instance('gable','#b1c1ca',[x,h+.15,z],[w+1.2,industrial?3:2.5,d+1.2]);
-      else instance('box','#f3f4ed',[x,h+.3,z],[w+.8,.5,d+.8]);
-      instance('box','#c2d1d8',[x,h*.55,z+d/2+.12],[w*.70,h*.52,.15]);
-      instance('box','#c2d1d8',[x+w/2+.12,h*.55,z],[.15,h*.52,d*.70]);
-      for(let floor=3;floor<h-1;floor+=5) instance('box','#e2e7e7',[x,floor,z+d/2+.23],[w*.75,.4,.12]);
-      if(h>16)instance('box','#cbd7db',[x+w*.16,h+1,z-d*.15],[w*.25,1.5,d*.25]);
-      else if(small) instance('box','#ecece4',[x,2.4,z+d*.55],[w*.55,.15,3]);
-      buildingCount++;
+  const services=[],districts=[...new Set(nodes.map(n=>n.district))];
+  for(const district of districts){
+    const local=roads.filter(r=>r.district===district&&!r.bridge);
+    for(const [k,type] of ['hospital','fire-station','police-station'].entries()){
+      let poi;
+      for(let attempt=0;attempt<400&&!poi;attempt++){
+        const road=local[(attempt*7+k*3)%local.length],along=road.length*(.25+rand()*.5),p=sampleRoad(road,along),side=attempt%2?-1:1,offset=road.width/2+42;
+        const x=p.x+Math.cos(p.heading)*offset*side,z=p.z-Math.sin(p.heading)*offset*side;
+        if(!isLand(x,z)||isLake(x,z)||isForest(x,z)||nearestRoad(roads,x,z).distance<32||services.some(s=>Math.hypot(s.x-x,s.z-z)<110))continue;
+        const yaw=Math.atan2(p.x-x,p.z-z),scale=1.8,entry={x:x+Math.sin(yaw)*22,z:z+Math.cos(yaw)*22};
+        const toA=along<road.length/2,tail=toA?road.points.filter(q=>q.distance<along).reverse():road.points.filter(q=>q.distance>along);
+        const connector=[entry,{x:p.x,z:p.z,roadId:road.id},...tail.map(q=>({x:q.x,z:q.z,...(q.node?{id:q.node}:{}),roadId:road.id}))];
+        poi={id:type+':'+district,type,district,x,z,yaw,scale,roadNode:toA?road.a:road.b,entrance:entry,connector};
+      }
+      if(!poi)throw new Error('Could not place '+type+' in '+district);
+      services.push(poi);
     }
-    for(const dx of [-67,67])for(const dz of [-61,61])tree(c.x+dx,c.z+dz,4+rand()*3);
   }
-  for(let k=0;k<180;k++){const x=(-1200+(rand()-.5)*2600)*CITY_SCALE,z=(-8900+(rand()-.5)*3900)*CITY_SCALE;if(forest(x,z)&&land(x,z))tree(x,z,7+rand()*7);}
-  // Flatten the detailed service buildings by material to keep draw calls low at city scale.
   const detailed=new Map();
-  for(const poi of services) {
-    const s=BUILDINGS.find(b=>b.id===poi.type),b=createBuilding(poi.type);b.position.set(poi.x,.15,poi.z);b.scale.setScalar(poi.scale);b.updateMatrixWorld(true);
+  for(const poi of services){
+    const b=createBuilding(poi.type);b.position.set(poi.x,.15,poi.z);b.rotation.y=poi.yaw;b.scale.setScalar(poi.scale);b.updateMatrixWorld(true);
     b.traverse(o=>{
       if(!o.isMesh)return;
       let g=o.geometry.clone();if(g.index){const expanded=g.toNonIndexed();g.dispose();g=expanded;}
       for(const a of Object.keys(g.attributes))if(!['position','normal'].includes(a))g.deleteAttribute(a);
-      g.applyMatrix4(o.matrixWorld);const color=o.material.color.getHexString(),key=color+':'+poi.district;if(!detailed.has(key))detailed.set(key,[]);detailed.get(key).push(g);
+      g.applyMatrix4(o.matrixWorld);const key=o.material.color.getHexString();if(!detailed.has(key))detailed.set(key,[]);detailed.get(key).push(g);
     });
     disposeBuilding(b);buildingCount++;
-    instance('box',poi.type==='police-station'?'#d4dbf0':poi.type==='hospital'?'#eadcda':'#ecd4cc',[poi.x,.085,poi.z],[poi.scale<2?74:STEP-24,.06,poi.scale<2?74:STEP-24]);
-    // Flags identify the service campuses from the wide city view.
-    instance('box','#b2bec4',[poi.x+(poi.scale<2?28:54),20,poi.z+(poi.scale<2?28:50)],[1,40,1]);
-    instance('box',s.color,[poi.x+(poi.scale<2?37:63),38,poi.z+(poi.scale<2?28:50)],[20,12,.8]);
+    instance('box',poi.type==='police-station'?'#d2dbef':'#ead6d1',[poi.x,.07,poi.z],[70,.06,65],poi.yaw);
   }
-  for(const [key,list] of detailed) {
-    const color=key.split(':')[0];
-    const g=mergeGeometries(list,false);list.forEach(g=>g.dispose());
-    const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:`#${color}`,roughness:.92,flatShading:true}));m.name='emergency-service-buildings';m.castShadow=true;m.receiveShadow=true;city.add(m);
+  for(const [color,list] of detailed){const g=mergeGeometries(list,false);list.forEach(g=>g.dispose());const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:'#'+color,roughness:.9,flatShading:true}));m.name='service-buildings';city.add(m);}
+  const occupied=new Map(),colors=['#e4e9e6','#e0e7e9','#ede8dc','#d6e1e0','#d9e2e8'];
+  function placeHouse(x,z,w,d,h,yaw,style){
+    if(!isLand(x,z)||isLake(x,z)||isForest(x,z)||services.some(s=>Math.hypot(s.x-x,s.z-z)<55))return false;
+    const r=Math.hypot(w,d)/2,near=nearestRoad(roads,x,z);if(near.distance<near.road.width/2+r+3)return false;
+    const bx=Math.floor(x/50),bz=Math.floor(z/50);
+    for(let i=bx-1;i<=bx+1;i++)for(let j=bz-1;j<=bz+1;j++)if((occupied.get(i+':'+j)||[]).some(o=>Math.hypot(o.x-x,o.z-z)<r+o.r+2))return false;
+    const key=bx+':'+bz;if(!occupied.has(key))occupied.set(key,[]);occupied.get(key).push({x,z,r});
+    instance('box',colors[Math.floor(rand()*colors.length)],[x,h/2+.15,z],[w,h,d],yaw);
+    if(style==='bungalow'||style==='warehouse')instance('gable','#a8bdc8',[x,h+.15,z],[w+.8,style==='warehouse'?2:2.6,d+.8],yaw);
+    else instance('box','#f0f2eb',[x,h+.25,z],[w+.5,.4,d+.5],yaw);
+    const front={x:x+Math.sin(yaw)*(d/2+.04),z:z+Math.cos(yaw)*(d/2+.04)};
+    instance('box','#b3c9d4',[front.x,h*.54,front.z],[w*.68,h*.45,.06],yaw);
+    if(style==='apartment')for(let floor=3;floor<h;floor+=4)instance('box','#dae4e5',[front.x,floor,front.z],[w*.75,.18,1.3],yaw);
+    if(style==='bungalow')instance('box','#e6ebe2',[front.x,2.3,front.z],[w*.55,.12,2],yaw);
+    buildingCount++;return true;
   }
-  const intersections=nodes.filter(n=>n.neighbors.length>=3),signalMatrices=[],signalNodes=[];
-  for(const n of intersections) {
-    instance('box','#e2e8e8',[n.x,.11,n.z],[13,.06,13]);
-    for(let i=0;i<4;i++) {instance('box','#f7f7ed',[n.x-4+i*2.5,.13,n.z+9],[1.15,.03,4]);instance('box','#f7f7ed',[n.x+9,.13,n.z-4+i*2.5],[4,.03,1.15]);}
-    for(const side of [-1,1]) {
-      const x=n.x+side*9,z=n.z+9;
-      instance('box','#9baeb8',[x,2.5,z],[.24,5,.24]);instance('box','#60788a',[x,5,z],[.75,1.6,.65]);
-      transform.position.set(x,5,z+.38);transform.scale.set(.23,.23,.12);transform.rotation.set(0,0,0);transform.updateMatrix();signalMatrices.push(transform.matrix.clone());signalNodes.push({node:n.id,axis:side<0?'x':'z'});
+  for(const road of roads){
+    if(road.bridge)continue;
+    for(let along=28;along<road.length-28;along+=30+rand()*12)for(const side of [-1,1]){
+      const p=sampleRoad(road,along),w=8+rand()*11,d=10+rand()*10,offset=road.width/2+d/2+8+rand()*10;
+      const x=p.x+Math.cos(p.heading)*offset*side,z=p.z-Math.sin(p.heading)*offset*side,yaw=p.heading-side*Math.PI/2;
+      const style=road.lanes===1?'bungalow':rand()<.25?'warehouse':'apartment',h=style==='bungalow'?3.5:style==='warehouse'?6:7+Math.floor(rand()*7)*4;
+      placeHouse(x,z,w,d,h,yaw,style);
+      if(rand()<.25&&isLand(x,z))tree(x+Math.cos(p.heading)*side*12,z-Math.sin(p.heading)*side*12,4);
     }
-    n.signal=signalMatrices.length-2;
   }
-  for(const [key,b] of batches) {
-    const mesh=new THREE.InstancedMesh(geometries[b.kind],new THREE.MeshStandardMaterial({color:b.color,roughness:.92,flatShading:true}),b.matrices.length);
-    mesh.userData.detailOnly=['#c2d1d8','#e2e7e7','#cbd7db','#9baeb8','#60788a','#f7f7ed','#f3f4ed','#acb8af'].includes(b.color);
-    mesh.name=`city-batch:${key}`;b.matrices.forEach((m,i)=>mesh.setMatrixAt(i,m));mesh.instanceMatrix.needsUpdate=true;mesh.receiveShadow=true;mesh.castShadow=b.kind!=='box'||!key.includes('#d8dfe3');mesh.computeBoundingSphere();city.add(mesh);
+  for(let k=0;k<180;k++){const x=(-1200+(rand()-.5)*2600)*S,z=(-8900+(rand()-.5)*3900)*S;if(isForest(x,z)&&isLand(x,z))tree(x,z,7+rand()*5);}
+  for(const [color,list] of surfaces){const g=mergeGeometries(list,false);list.forEach(g=>g.dispose());const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1}));m.name='curved-road-surfaces';city.add(m);}
+  const signalMatrices=[],signalNodes=[],intersections=nodes.filter(n=>n.neighbors.length>=3);
+  for(const n of intersections){
+    const approaches=roads.filter(r=>r.a===n.id||r.b===n.id),radius=Math.max(...approaches.map(r=>r.width))*.6;
+    instance('disc','#cad7de',[n.x,.14,n.z],[radius,.04,radius]);
+    for(const road of approaches){
+      const p=sampleRoad(road,road.a===n.id?12:road.length-12),side=road.a===n.id?1:-1,offset=road.width/2+.8;
+      const x=p.x+Math.cos(p.heading)*offset*side,z=p.z-Math.sin(p.heading)*offset*side;
+      instance('box','#92a7b3',[x,2.6,z],[.2,5.2,.2]);instance('box','#536e80',[x,5,z],[.7,1.45,.6],p.heading);
+      transform.position.set(x,5,z);transform.scale.set(.26,.26,.26);transform.rotation.set(0,0,0);transform.updateMatrix();signalMatrices.push(transform.matrix.clone());signalNodes.push({node:n.id,road:road.id,axis:Math.abs(Math.sin(p.heading))>Math.abs(Math.cos(p.heading))?'x':'z'});
+      for(let stripe=0;stripe<Math.floor(road.width/1.6);stripe++)instance('box','#f4f4e9',[p.x+Math.cos(p.heading)*(-road.width/2+stripe*1.6+.7),.17,p.z-Math.sin(p.heading)*(-road.width/2+stripe*1.6+.7)],[.8,.02,3.2],p.heading);
+    }
+    n.signal=signalMatrices.length-1;
   }
-  const signals=new THREE.InstancedMesh(geometries.lens,new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.5}),signalMatrices.length);signals.name='traffic-signal-lenses';
-  const green=new THREE.Color('#60ad87'),red=new THREE.Color('#df847d');
-  signalMatrices.forEach((m,i)=>{signals.setMatrixAt(i,m);signals.setColorAt(i,i%2?red:green);});signals.instanceMatrix.needsUpdate=true;signals.instanceColor.needsUpdate=true;city.add(signals);
-  city.userData={id:city.name,description:'Stylized procedural Mumbai-inspired coastal metropolis',seed:721,nodes,roads,services,signalNodes,stats:{roads:roads.length,intersections:intersections.length,signals:signalMatrices.length,buildings:buildingCount,trees:treeCount,districts:districts.size,services:services.length},bounds:{width:10700*CITY_SCALE,length:23000*CITY_SCALE},areaFraction:CITY_AREA_FRACTION};
-  // Runtime handles are not included in exported userData.
-  city.signals=signals;
-  let detailedView=null;
-  city.setDetail=zoom=>{
-    const detail=zoom>3;
-    if(detail===detailedView)return;
-    detailedView=detail;
-    for(const child of city.children)if(child.userData.detailOnly)child.visible=detail;
-    signals.visible=detail;
-  };
+  for(const [key,b] of batches){
+    const m=new THREE.InstancedMesh(geometries[b.kind],new THREE.MeshStandardMaterial({color:b.color,roughness:.9,flatShading:true}),b.matrices.length);
+    m.name='city-batch:'+key;b.matrices.forEach((matrix,i)=>m.setMatrixAt(i,matrix));m.instanceMatrix.needsUpdate=true;m.computeBoundingSphere();city.add(m);
+  }
+  const signals=new THREE.InstancedMesh(geometries.lens,new THREE.MeshBasicMaterial({color:'#ffffff'}),signalMatrices.length);
+  signalMatrices.forEach((m,i)=>{signals.setMatrixAt(i,m);signals.setColorAt(i,new THREE.Color(i%2?'#dc7a76':'#58a989'));});
+  signals.instanceMatrix.needsUpdate=true;signals.instanceColor.needsUpdate=true;signals.name='traffic-signals';city.add(signals);city.signals=signals;city.setDetail=()=>{};
+  city.userData={id:city.name,seed:721,areaFraction:CITY_AREA_FRACTION,nodes,roads,services,signalNodes,stats:{roads:150,intersections:intersections.length,signals:signalMatrices.length,buildings:buildingCount,trees:treeCount,districts:districts.length,services:services.length,lanes:roads.reduce((counts,r)=>(counts[r.lanes]=(counts[r.lanes]||0)+1,counts),{})},bounds:{width:10700*S,length:23000*S}};
   return city;
 }
-export function disposeCityMap(city) {
-  const geometry=new Set(),materials=new Set();city.traverse(o=>{if(o.isMesh){geometry.add(o.geometry);materials.add(o.material);if(o.isInstancedMesh)o.dispose();}});
-  geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());city.removeFromParent();
+export function disposeCityMap(city){
+  const geometries=new Set(),materials=new Set();city.traverse(o=>{if(o.isMesh){geometries.add(o.geometry);materials.add(o.material);if(o.isInstancedMesh)o.dispose();}});
+  geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());city.removeFromParent();
 }

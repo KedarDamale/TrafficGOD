@@ -2,10 +2,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createCityMap, disposeCityMap } from '../3d_models/maps/city-map.js';
-import { VEHICLES, createVehicle, animateVehicle, disposeVehicle } from '../3d_models/index.js';
+import { createCityMap, disposeCityMap, CITY_SCALE } from '../3d_models/maps/city-map.js';
+import { createVehicle, animateVehicle, disposeVehicle } from '../3d_models/index.js';
 import { AmbulanceDemoController, CivilianTraffic, chooseLocations } from '../simulation/demo-controller.js';
-import { nearestNode } from '../simulation/graph.js';
+import { nearestRoad } from '../simulation/road-network.js';
+import { FleetRenderer } from '../simulation/fleet-renderer.js';
 
 function SimulationCanvas({ onReady, onState, onError }) {
   const host = useRef(null);
@@ -22,9 +23,10 @@ function SimulationCanvas({ onReady, onState, onError }) {
     element.appendChild(renderer.domElement);
     renderer.domElement.setAttribute('aria-label', 'Interactive coastal city traffic simulation');
     const scene = new THREE.Scene();
-    const camera = new THREE.OrthographicCamera(-16000, 16000, 9500, -9500, 1, 150000);
-    const homeTarget = new THREE.Vector3(700, 0, -600);
-    const homeOffset = new THREE.Vector3(22000, 30000, 23000);
+    const viewHeight=9500*CITY_SCALE;
+    const camera = new THREE.OrthographicCamera(-viewHeight*1.6,viewHeight*1.6,viewHeight,-viewHeight,1,40000);
+    const homeTarget = new THREE.Vector3(700, 0, -600).multiplyScalar(CITY_SCALE);
+    const homeOffset = new THREE.Vector3(22000, 30000, 23000).multiplyScalar(CITY_SCALE);
     camera.position.copy(homeTarget).add(homeOffset);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.copy(homeTarget);
@@ -45,7 +47,10 @@ function SimulationCanvas({ onReady, onState, onError }) {
     const controller = new AmbulanceDemoController(map);
     const locations = chooseLocations(map);
     let target = controller.nodes.get(locations[0].node);
-    let follow = false, ambulance = null, traffic = null, civilianModels = [], frame;
+    let follow = false, ambulance = null, frame, incident=null,clickedName=null;
+    const roadLookup=new Map(map.roads.map(r=>[r.id,r]));
+    const traffic=new CivilianTraffic(map,[],3600);traffic.tick(0,controller);
+    const fleet=new FleetRenderer(traffic.agents);scene.add(fleet.root);
     let last = performance.now(), lastReport = 0, lastSignal = -1, lastCorridor = '';
     const sceneObjects = new THREE.Group(), routeObjects = new THREE.Group(), corridor = new THREE.Group();
     scene.add(sceneObjects, routeObjects, corridor);
@@ -61,16 +66,16 @@ function SimulationCanvas({ onReady, onState, onError }) {
     function strip(group, a, b, width, material) {
       const dx = b.x - a.x, dz = b.z - a.z;
       const mesh = new THREE.Mesh(boxGeometry, material);
-      mesh.position.set((a.x + b.x) / 2, .22, (a.z + b.z) / 2);
+      const road=roadLookup.get(a.roadId||b.roadId);
+      mesh.position.set((a.x + b.x) / 2, road?.bridge?.53:.22, (a.z + b.z) / 2);
+      width=Math.min(width,road?.width*.9||width);
       mesh.scale.set(width, .025, Math.hypot(dx, dz));
       mesh.rotation.y = Math.atan2(dx, dz);
       group.add(mesh);
     }
-    function clearTraffic() {
-      civilianModels.forEach(disposeVehicle); civilianModels = [];
-      if (ambulance) disposeVehicle(ambulance);
-      ambulance = null; traffic = null;
-      sceneObjects.clear(); routeObjects.clear(); corridor.clear(); lastCorridor = '';
+    function clearEmergency(){
+      if(ambulance)disposeVehicle(ambulance);
+      ambulance=null;sceneObjects.clear();routeObjects.clear();corridor.clear();lastCorridor='';
     }
     function overview() {
       follow = false;
@@ -81,42 +86,36 @@ function SimulationCanvas({ onReady, onState, onError }) {
     }
     function publish() {
       onState({
-        ...controller.snapshot(), yielding: traffic?.yielding || 0, stats: map.stats, locations,
-        targetName: locations.find(l => l.node === target.id)?.name || 'Selected road', target: target.id
+        ...controller.snapshot(), yielding: traffic.yielding, trafficCount:traffic.agents.length, stats: map.stats, locations, customTarget:!!incident,
+        targetName: clickedName||locations.find(l => l.node === target.id)?.name || 'Selected road', target: target.id
       });
     }
-    function setTarget(id) {
+    function setTarget(id,point=null) {
       if (!['idle', 'completed'].includes(controller.phase)) return;
       const node = controller.nodes.get(id); if (!node) return;
-      target = node; marker.position.set(node.x, .3, node.z); publish();
+      target = node;incident=point;clickedName=point?roadLookup.get(point.roadId).name:null;marker.position.set(point?.x??node.x,.3,point?.z??node.z);publish();
     }
     const api = {
       setTarget,
       simulate: event => {
         if (!['idle', 'completed'].includes(controller.phase)) return;
         try {
-          clearTraffic(); controller.start(target.id, event);
-          ambulance = createVehicle('ambulance'); ambulance.scale.setScalar(2.5); sceneObjects.add(ambulance);
-          traffic = new CivilianTraffic(map, controller.outbound, 96);
-          const cars = VEHICLES.filter(v => v.category === 'cars');
-          traffic.agents.forEach((agent, i) => {
-            const vehicle = createVehicle(cars[i % cars.length].id, { colorIndex: i % 6 });
-            vehicle.scale.setScalar(2); sceneObjects.add(vehicle); civilianModels.push(vehicle);
-          });
+          clearEmergency(); controller.start(target.id,event,incident);
+          ambulance = createVehicle('ambulance'); ambulance.scale.setScalar(1.5); sceneObjects.add(ambulance);
           for (let i = 1; i < controller.outbound.length; i++) strip(routeObjects, controller.outbound[i - 1], controller.outbound[i], 2.8, blueMaterial);
           follow = true; publish();
-        } catch (error) { controller.reset(); clearTraffic(); onError(error.message); publish(); }
+        } catch (error) { controller.reset(); clearEmergency(); onError(error.message); publish(); }
       },
       pause: () => { controller.paused = !controller.paused; publish(); },
-      reset: () => { clearTraffic(); controller.reset(); lastSignal = -1; overview(); publish(); },
+      reset: () => { clearEmergency(); controller.reset(); lastSignal = -1; overview(); publish(); },
       overview,
       follow: () => { follow = true; }
     };
     const resize = () => {
       const w = element.clientWidth, h = element.clientHeight;
       renderer.setSize(w, h);
-      camera.left = -9500 * w / h; camera.right = 9500 * w / h;
-      camera.top = 9500; camera.bottom = -9500; camera.updateProjectionMatrix();
+      camera.left = -viewHeight * w / h; camera.right = viewHeight * w / h;
+      camera.top = viewHeight; camera.bottom = -viewHeight; camera.updateProjectionMatrix();
     };
     const observer = new ResizeObserver(resize); observer.observe(element); resize();
     const raycaster = new THREE.Raycaster(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -129,8 +128,8 @@ function SimulationCanvas({ onReady, onState, onError }) {
       const pointer = new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
       const hit = new THREE.Vector3(); raycaster.setFromCamera(pointer, camera);
       if (raycaster.ray.intersectPlane(ground, hit)) {
-        const node = nearestNode(map.nodes, hit.x, hit.z);
-        if (Math.hypot(node.x - hit.x, node.z - hit.z) < 250) setTarget(node.id);
+        const near=nearestRoad(map.roads,hit.x,hit.z);
+        if(near.distance<35){const id=near.along<near.road.length/2?near.road.a:near.road.b;setTarget(id,{x:near.x,z:near.z,along:near.along,roadId:near.road.id});}
       }
     };
     const interruptFollow = () => { follow = false; };
@@ -140,36 +139,30 @@ function SimulationCanvas({ onReady, onState, onError }) {
       const now = performance.now(), dt = Math.min((now - last) / 1000, .25); last = now;
       controller.tick(dt);
       if (ambulance && controller.pose) {
-        ambulance.position.set(controller.pose.x, .18, controller.pose.z);
+        ambulance.position.set(controller.pose.x,controller.pose.y??.16,controller.pose.z);
         const angle = Math.atan2(Math.sin(controller.pose.heading - ambulance.rotation.y), Math.cos(controller.pose.heading - ambulance.rotation.y));
         ambulance.rotation.y += angle * Math.min(1, dt * 7);
         animateVehicle(ambulance, {
           deltaSeconds: controller.paused ? 0 : dt,
-          speed: ['outbound', 'returning'].includes(controller.phase) ? controller.speed * controller.timeScale / 2.5 : 0,
+          speed: ['outbound', 'returning'].includes(controller.phase) ? controller.speed * controller.timeScale / 1.5 : 0,
           timeSeconds: now / 1000, emergencyActive: ['outbound', 'returning'].includes(controller.phase)
         });
         if (follow) {
           const desired = new THREE.Vector3(controller.pose.x, 0, controller.pose.z);
           controls.target.lerp(desired, Math.min(1, dt * 3));
           camera.position.copy(controls.target).add(homeOffset);
-          camera.zoom = THREE.MathUtils.lerp(camera.zoom, 48, Math.min(1, dt * 1.8)); camera.updateProjectionMatrix();
+          camera.zoom = THREE.MathUtils.lerp(camera.zoom, 18, Math.min(1, dt * 1.8)); camera.updateProjectionMatrix();
         }
       }
-      if (traffic && !controller.paused) {
-        traffic.tick(dt, controller);
-        traffic.agents.forEach((agent, i) => {
-          if (!agent.pose) return;
-          const vehicle = civilianModels[i];
-          vehicle.position.set(agent.pose.x, .12, agent.pose.z); vehicle.rotation.y = agent.pose.heading;
-          animateVehicle(vehicle, { deltaSeconds: dt, speed: agent.stopped ? 0 : agent.speed * controller.timeScale / 2 });
-        });
-      }
+      if(!controller.paused)traffic.tick(dt,controller);
+      fleet.update({detailed:camera.zoom>3.5,center:controls.target,radius:Math.hypot(viewHeight,camera.right)/camera.zoom*2});
       const signalTime = Math.floor(now / 180);
       if (signalTime !== lastSignal) {
         const normal = Math.floor(controller.clock / 12) % 2 ? 'z' : 'x';
         map.signalNodes.forEach((signal, i) => {
           const priority = controller.priorities.get(signal.node);
-          city.signals.setColorAt(i, (priority ? priority.axis : normal) === signal.axis ? green : red);
+          const allowed=priority?(priority.roads?priority.roads.includes(signal.road):priority.axis===signal.axis):normal===signal.axis;
+          city.signals.setColorAt(i,allowed?green:red);
         });
         city.signals.instanceColor.needsUpdate = true; lastSignal = signalTime;
       }
@@ -177,12 +170,12 @@ function SimulationCanvas({ onReady, onState, onError }) {
       if (key !== lastCorridor) {
         corridor.clear();
         if (['outbound', 'returning'].includes(controller.phase)) {
-          for (let i = controller.segment; i < Math.min(controller.route.length - 1, controller.segment + 5); i++) strip(corridor, controller.route[i], controller.route[i + 1], 17, greenMaterial);
+          for (let i = controller.segment; i < controller.corridorEnd(); i++) strip(corridor, controller.route[i], controller.route[i + 1], 17, greenMaterial);
         }
         lastCorridor = key;
       }
-      const markerSize = Math.max(5, 100 / camera.zoom);
-      marker.scale.set(markerSize, 1, markerSize); markerPin.position.set(target.x, markerSize * 1.5, target.z); markerPin.scale.setScalar(markerSize * .5);
+      const markerSize = Math.max(4,30/camera.zoom);
+      marker.scale.set(markerSize, 1, markerSize); markerPin.position.set(marker.position.x,markerSize*1.5,marker.position.z); markerPin.scale.setScalar(markerSize * .5);
       controls.update(); city.setDetail(camera.zoom); renderer.render(scene, camera);
       if (now - lastReport > 250) { publish(); lastReport = now; }
       frame = requestAnimationFrame(tick);
@@ -191,7 +184,7 @@ function SimulationCanvas({ onReady, onState, onError }) {
     return () => {
       cancelAnimationFrame(frame); observer.disconnect(); controls.removeEventListener('start', interruptFollow); controls.dispose();
       renderer.domElement.removeEventListener('pointerdown', down); renderer.domElement.removeEventListener('pointerup', up);
-      clearTraffic(); disposeCityMap(city);
+      clearEmergency(); fleet.dispose(); disposeCityMap(city);
       boxGeometry.dispose(); blueMaterial.dispose(); greenMaterial.dispose();
       marker.geometry.dispose(); marker.material.dispose(); markerPin.geometry.dispose(); markerPin.material.dispose();
       renderer.dispose(); renderer.domElement.remove(); onReady(null);
@@ -219,14 +212,16 @@ export default function Simulation() {
     <SimulationCanvas onReady={receiveApi} onState={receive} onError={reportError} />
     <section className="simulation-controls" aria-label="Disruption simulation controls">
       <div className="control-title"><span className="live-dot" />TrafficGod <small>SIMULATION</small></div>
+      <p className="traffic-count">{state.trafficCount?state.trafficCount.toLocaleString()+' vehicles · 150 distinct streets':'Preparing city traffic…'}</p>
       <label htmlFor="event">Disruption</label>
       <select id="event" value={event} disabled={active} onChange={e => setEvent(e.target.value)}>
         {EVENTS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </select>
       <label htmlFor="location">Incident location</label>
-      <select id="location" value={state.target || ''} disabled={!ready || active} onChange={e => runtime.current?.setTarget(e.target.value)}>
+      <select id="location" value={state.customTarget?'custom-road':state.target||''} disabled={!ready || active} onChange={e => runtime.current?.setTarget(e.target.value)}>
         {state.locations.map(location => <option key={location.node} value={location.node}>{location.name}</option>)}
-        {state.target && !state.locations.some(location => location.node === state.target) && <option value={state.target}>Selected road</option>}
+        {state.customTarget&&<option value="custom-road">{state.targetName}</option>}
+        {state.target&&!state.customTarget&&!state.locations.some(l=>l.node===state.target)&&<option value={state.target}>{state.targetName}</option>}
       </select>
       <p className="location-hint">Or click a road on the map. Drag to pan; scroll to zoom.</p>
       <button className="simulate-button" disabled={!ready || active} onClick={() => { setError(''); runtime.current?.simulate(event); }}>
