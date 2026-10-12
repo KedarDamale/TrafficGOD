@@ -1,9 +1,0 @@
-{
-  "name": "trafficgod-vehicle-models",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {"test": "node --test tests/*.test.js", "preview": "python3 -m http.server 8080 --bind 127.0.0.1", "export": "node scripts/export-models.js"},
-  "dependencies": {"three": "0.180.0"},
-  "devDependencies": {"@playwright/test": "1.56.1"}
-}

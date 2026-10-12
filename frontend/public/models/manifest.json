@@ -1,0 +1,180 @@
+{
+  "format": "THREE.ObjectLoader",
+  "models": [
+    {
+      "id": "baleno",
+      "name": "Maruti Suzuki Baleno",
+      "file": "baleno.json",
+      "category": "cars"
+    },
+    {
+      "id": "nexon",
+      "name": "Tata Nexon",
+      "file": "nexon.json",
+      "category": "cars"
+    },
+    {
+      "id": "punch",
+      "name": "Tata Punch",
+      "file": "punch.json",
+      "category": "cars"
+    },
+    {
+      "id": "fronx",
+      "name": "Maruti Suzuki Fronx",
+      "file": "fronx.json",
+      "category": "cars"
+    },
+    {
+      "id": "wagon-r",
+      "name": "Maruti Suzuki Wagon R",
+      "file": "wagon-r.json",
+      "category": "cars"
+    },
+    {
+      "id": "dzire",
+      "name": "Maruti Suzuki Dzire",
+      "file": "dzire.json",
+      "category": "cars"
+    },
+    {
+      "id": "creta",
+      "name": "Hyundai Creta",
+      "file": "creta.json",
+      "category": "cars"
+    },
+    {
+      "id": "swift",
+      "name": "Maruti Suzuki Swift",
+      "file": "swift.json",
+      "category": "cars"
+    },
+    {
+      "id": "scorpio",
+      "name": "Mahindra Scorpio",
+      "file": "scorpio.json",
+      "category": "cars"
+    },
+    {
+      "id": "ertiga",
+      "name": "Maruti Suzuki Ertiga",
+      "file": "ertiga.json",
+      "category": "cars"
+    },
+    {
+      "id": "splendor-plus",
+      "name": "Hero Splendor Plus",
+      "file": "splendor-plus.json",
+      "category": "bikes"
+    },
+    {
+      "id": "activa",
+      "name": "Honda Activa",
+      "file": "activa.json",
+      "category": "bikes"
+    },
+    {
+      "id": "jupiter",
+      "name": "TVS Jupiter",
+      "file": "jupiter.json",
+      "category": "bikes"
+    },
+    {
+      "id": "shine",
+      "name": "Honda Shine",
+      "file": "shine.json",
+      "category": "bikes"
+    },
+    {
+      "id": "pulsar",
+      "name": "Bajaj Pulsar",
+      "file": "pulsar.json",
+      "category": "bikes"
+    },
+    {
+      "id": "apache",
+      "name": "TVS Apache",
+      "file": "apache.json",
+      "category": "bikes"
+    },
+    {
+      "id": "hf-deluxe",
+      "name": "Hero HF Deluxe",
+      "file": "hf-deluxe.json",
+      "category": "bikes"
+    },
+    {
+      "id": "classic-350",
+      "name": "Royal Enfield Classic 350",
+      "file": "classic-350.json",
+      "category": "bikes"
+    },
+    {
+      "id": "access-125",
+      "name": "Suzuki Access 125",
+      "file": "access-125.json",
+      "category": "bikes"
+    },
+    {
+      "id": "xl100",
+      "name": "TVS XL100",
+      "file": "xl100.json",
+      "category": "bikes"
+    },
+    {
+      "id": "police-car",
+      "name": "Police Patrol",
+      "file": "police-car.json",
+      "category": "vehicles"
+    },
+    {
+      "id": "police-bike",
+      "name": "Police Motorcycle",
+      "file": "police-bike.json",
+      "category": "vehicles"
+    },
+    {
+      "id": "ambulance",
+      "name": "Ambulance",
+      "file": "ambulance.json",
+      "category": "vehicles"
+    },
+    {
+      "id": "fire-truck",
+      "name": "Fire Engine",
+      "file": "fire-truck.json",
+      "category": "vehicles"
+    },
+    {
+      "id": "delivery-truck",
+      "name": "Delivery Truck",
+      "file": "delivery-truck.json",
+      "category": "vehicles"
+    },
+    {
+      "id": "tipper-truck",
+      "name": "Tipper Truck",
+      "file": "tipper-truck.json",
+      "category": "vehicles"
+    },
+    {
+      "id": "tanker-truck",
+      "name": "Tanker Truck",
+      "file": "tanker-truck.json",
+      "category": "vehicles"
+    },
+    {
+      "id": "tractor-trailer",
+      "name": "Box Semi Trailer",
+      "file": "tractor-trailer.json",
+      "category": "vehicles"
+    },
+    {
+      "id": "flatbed-trailer",
+      "name": "Flatbed Semi Trailer",
+      "file": "flatbed-trailer.json",
+      "category": "vehicles"
+    }
+  ],
+  "map": "ivory-district.json"
+}
