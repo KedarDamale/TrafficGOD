@@ -61,7 +61,7 @@ maps/city-map.js creates the large Mumbai-inspired coastal metropolis used by th
 
 maps/neighborhood.js retains the smaller Ivory District through createNeighborhoodMap and disposeNeighborhoodMap.
 
-Run from frontend, the only package root:
+Run from the repository root:
 
     npm run export:models
 

@@ -57,10 +57,9 @@ Candidate learning methods include DQN, PPO, MAPPO, QMIX, and graph-based multi-
 
 ## Getting started
 
-The frontend and model library use one package manifest and lockfile, both inside `frontend`. Node.js 20.9+ is required.
+The frontend and model library use one package manifest and lockfile, both in the repository root. Node.js 20.9+ is required.
 
 ```sh
-cd frontend
 npm ci
 npm run dev
 ```
@@ -73,13 +72,13 @@ The base map contains 7,507 road segments, 3,805 intersections, 29,494 buildings
     npm run build
     npm run export:models
 
-One package manifest and lockfile live in frontend. The [model library](frontend/3d_models/README.md) includes 29 vehicles and 11 reusable building types. The cars have distinct sculpted bodies, cabins, lights, and grilles. JSON assets live in frontend/public/models.
+One package manifest and lockfile live in the repository root. The [model library](3d_models/README.md) includes 29 vehicles and 11 reusable building types. The cars have distinct sculpted bodies, cabins, lights, and grilles. JSON assets live in public/models.
 
-The [simulation controller](frontend/simulation/README.md) is separate from scene rendering. It provides the seam for adding a trained RL signal policy later. Routing and traffic reactions are deterministic demo logic, not learned control or measured research results.
+The [simulation controller](simulation/README.md) is separate from scene rendering. It provides the seam for adding a trained RL signal policy later. Routing and traffic reactions are deterministic demo logic, not learned control or measured research results.
 
 For a browser smoke check on Linux with Google Chrome installed, run npm run test:browser while the dev server is running. Set CHROME_PATH for another Chromium executable. It checks disruption/location controls, a complete round trip, signal recovery, pause/resume, reset, and mobile layout.
 
-![Large coastal city simulation](frontend/public/previews/metropolis.png)
+![Large coastal city simulation](public/previews/metropolis.png)
 
 ## References
 
