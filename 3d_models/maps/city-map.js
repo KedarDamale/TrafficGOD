@@ -3,9 +3,12 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS, createBuilding, disposeBuilding } from '../buildings/index.js';
 export { createNeighborhoodMap, disposeNeighborhoodMap } from './neighborhood.js';
 
+export const CITY_AREA_FRACTION = .08;
+export const CITY_SCALE = Math.sqrt(CITY_AREA_FRACTION);
+
 // A fictional Mumbai-inspired peninsula and mainland, not surveyed OSM geography.
-const PENINSULA = [[-3500,-11500],[1300,-11500],[2000,-9300],[1600,-7000],[1400,-5300],[800,-3800],[1400,-2400],[900,-500],[1200,1200],[500,3000],[600,4300],[-100,5600],[100,6500],[-600,8600],[-1200,10700],[-2000,11200],[-2300,9500],[-2800,7200],[-2400,4800],[-3000,2900],[-3300,600],[-3700,-1200],[-3300,-3400],[-4000,-5800],[-3500,-7900],[-3900,-9300]];
-const MAINLAND = [[2500,-11500],[5700,-11500],[5700,6000],[5200,6000],[4500,4000],[3800,2800],[3200,1000],[2800,-1400],[2100,-3700],[2600,-6100],[2000,-8800]];
+const PENINSULA = [[-3500,-11500],[1300,-11500],[2000,-9300],[1600,-7000],[1400,-5300],[800,-3800],[1400,-2400],[900,-500],[1200,1200],[500,3000],[600,4300],[-100,5600],[100,6500],[-600,8600],[-1200,10700],[-2000,11200],[-2300,9500],[-2800,7200],[-2400,4800],[-3000,2900],[-3300,600],[-3700,-1200],[-3300,-3400],[-4000,-5800],[-3500,-7900],[-3900,-9300]].map(([x,z])=>[x*CITY_SCALE,z*CITY_SCALE]);
+const MAINLAND = [[2500,-11500],[5700,-11500],[5700,6000],[5200,6000],[4500,4000],[3800,2800],[3200,1000],[2800,-1400],[2100,-3700],[2600,-6100],[2000,-8800]].map(([x,z])=>[x*CITY_SCALE,z*CITY_SCALE]);
 function inside(x,z,polygon) {
   let result=false;
   for(let i=0,j=polygon.length-1;i<polygon.length;j=i++) {
@@ -15,11 +18,11 @@ function inside(x,z,polygon) {
   return result;
 }
 const land=(x,z)=>inside(x,z,PENINSULA)||inside(x,z,MAINLAND);
-const lake=(x,z)=>((x-400)/650)**2+((z+6100)/450)**2<1;
-const forest=(x,z)=>((x+1200)/1350)**2+((z+8900)/2000)**2<1;
+const lake=(x,z)=>((x-400*CITY_SCALE)/(650*CITY_SCALE))**2+((z+6100*CITY_SCALE)/(450*CITY_SCALE))**2<1;
+const forest=(x,z)=>((x+1200*CITY_SCALE)/(1350*CITY_SCALE))**2+((z+8900*CITY_SCALE)/(2000*CITY_SCALE))**2<1;
 function random(seed) {let v=seed>>>0;return()=>{v=(1664525*v+1013904223)>>>0;return v/4294967296;};}
 
-/** Large deterministic, car-free base map. Road graph and service metadata power the demo controller. */
+/** Compact deterministic base map at 8% of the previous footprint. Road graph and service metadata power the demo controller. */
 export function createCityMap() {
   const city=new THREE.Group();city.name='mumbai-inspired-city';
   const rand=random(721), batches=new Map(), nodes=[], roads=[], cells=[], services=[];
@@ -42,19 +45,21 @@ export function createCityMap() {
     const g=new THREE.ShapeGeometry(shape);g.rotateX(-Math.PI/2);
     const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:3}));m.position.y=y;m.name=name;m.receiveShadow=true;city.add(m);
   }
-  const sea=new THREE.Mesh(new THREE.PlaneGeometry(60000,60000),new THREE.MeshStandardMaterial({color:'#a9c9dc',roughness:1}));sea.rotation.x=-Math.PI/2;sea.position.y=-.12;sea.name='arabian-sea-and-harbor';city.add(sea);
+  const sea=new THREE.Mesh(new THREE.PlaneGeometry(20000,20000),new THREE.MeshStandardMaterial({color:'#a9c9dc',roughness:1}));sea.rotation.x=-Math.PI/2;sea.position.y=-.12;sea.name='arabian-sea-and-harbor';city.add(sea);
   polygon(PENINSULA,'#eef0ec',.02,'peninsula');polygon(MAINLAND,'#ecefe9',.02,'mainland');
-  const park=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#c5d7be',roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));park.rotation.x=-Math.PI/2;park.position.set(-1200,.07,-8900);park.scale.set(1350,2000,1);park.name='northern-forest';city.add(park);
-  const water=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#91bcd4',roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));water.rotation.x=-Math.PI/2;water.position.set(400,.08,-6100);water.scale.set(650,450,1);water.name='inland-lake';city.add(water);
-  const STEP=180, X=-5000, Z=-11520, COLS=60, ROWS=128, lookup=new Map();
+  const park=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#c5d7be',roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));park.rotation.x=-Math.PI/2;park.position.set(-1200*CITY_SCALE,.07,-8900*CITY_SCALE);park.scale.set(1350*CITY_SCALE,2000*CITY_SCALE,1);park.name='northern-forest';city.add(park);
+  const water=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#91bcd4',roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));water.rotation.x=-Math.PI/2;water.position.set(400*CITY_SCALE,.08,-6100*CITY_SCALE);water.scale.set(650*CITY_SCALE,450*CITY_SCALE,1);water.name='inland-lake';city.add(water);
+  const STEP=160, X=-5000*CITY_SCALE, Z=-11520*CITY_SCALE, COLS=Math.ceil(60*CITY_SCALE*180/STEP), ROWS=Math.ceil(128*CITY_SCALE*180/STEP), lookup=new Map();
   for(let i=0;i<=COLS;i++)for(let j=0;j<=ROWS;j++) {
     const x=X+i*STEP,z=Z+j*STEP;
     if(!land(x,z)||lake(x,z)||forest(x,z)) continue;
     const n={id:`${i}:${j}`,x,z,i,j,neighbors:[],signal:null};lookup.set(n.id,n);nodes.push(n);
   }
   function connect(a,b,arterial=false,bridge=false) {
-    const width=arterial?22:12;
-    roads.push({a:a.id,b:b.id,width,bridge,length:Math.hypot(a.x-b.x,a.z-b.z)});a.neighbors.push(b.id);b.neighbors.push(a.id);
+    const width=arterial?26:18;
+    roads.push({a:a.id,b:b.id,width,arterial,bridge,length:Math.hypot(a.x-b.x,a.z-b.z)});a.neighbors.push(b.id);b.neighbors.push(a.id);
+  }
+  function drawRoad(a,b,width,arterial,bridge) {
     segment(a,b,width,bridge?.4:.07,arterial?'#ced7de':'#d8dfe3');
     if(arterial) segment(a,b,.25,bridge?.47:.13,'#f4f4e9');
     if(bridge) {
@@ -68,10 +73,20 @@ export function createCityMap() {
     if(next && land((n.x+next.x)/2,(n.z+next.z)/2)) connect(n,next,di===1?n.j%8===0:n.i%7===0);
   }
   const closest=(x,z,predicate=()=>true)=>nodes.filter(predicate).reduce((best,n)=>!best||Math.hypot(n.x-x,n.z-z)<Math.hypot(best.x-x,best.z-z)?n:best,null);
-  const west=closest(-1600,4500,n=>n.x<1500),east=closest(4800,4500,n=>n.x>2500);
+  const west=closest(-1600*CITY_SCALE,4500*CITY_SCALE,n=>n.x<1500*CITY_SCALE),east=closest(4800*CITY_SCALE,4500*CITY_SCALE,n=>n.x>2500*CITY_SCALE);
   connect(west,east,true,true);
-  const coastalA=closest(-3100,1200,n=>n.x<0),coastalB=closest(-2500,6600,n=>n.x<0);
-  const via={id:'sea-link',x:-3900,z:4100,neighbors:[],signal:null};nodes.push(via);lookup.set(via.id,via);connect(coastalA,via,true,true);connect(via,coastalB,true,true);
+  const coastalA=closest(-3100*CITY_SCALE,1200*CITY_SCALE,n=>n.x<0),coastalB=closest(-2500*CITY_SCALE,6600*CITY_SCALE,n=>n.x<0);
+  const via={id:'sea-link',x:-3900*CITY_SCALE,z:4100*CITY_SCALE,neighbors:[],signal:null};nodes.push(via);lookup.set(via.id,via);connect(coastalA,via,true,true);connect(via,coastalB,true,true);
+  // Keep a connected road network so all selectable incidents have a feasible return trip.
+  let largest=new Set(),unvisited=new Set(nodes.map(n=>n.id));
+  while(unvisited.size){
+    const component=new Set(),queue=[unvisited.values().next().value];
+    while(queue.length){const id=queue.pop();if(!unvisited.delete(id))continue;component.add(id);queue.push(...lookup.get(id).neighbors);}
+    if(component.size>largest.size)largest=component;
+  }
+  for(let i=nodes.length-1;i>=0;i--)if(!largest.has(nodes[i].id)){lookup.delete(nodes[i].id);nodes.splice(i,1);}
+  for(let i=roads.length-1;i>=0;i--)if(!largest.has(roads[i].a)||!largest.has(roads[i].b))roads.splice(i,1);
+  for(const road of roads)drawRoad(lookup.get(road.a),lookup.get(road.b),road.width,road.arterial,road.bridge);
   for(let i=0;i<COLS;i++)for(let j=0;j<ROWS;j++) {
     const corners=[lookup.get(`${i}:${j}`),lookup.get(`${i+1}:${j}`),lookup.get(`${i}:${j+1}`),lookup.get(`${i+1}:${j+1}`)];
     if(corners.some(n=>!n)) continue;
@@ -80,7 +95,7 @@ export function createCityMap() {
   }
   // Every inhabited district receives all three emergency services on separate blocks.
   const districts=new Map();
-  for(const c of cells) {const id=`${Math.floor(c.i/10)}:${Math.floor(c.j/12)}`;if(!districts.has(id))districts.set(id,[]);districts.get(id).push(c);}
+  for(const c of cells) {const id=`${Math.floor(c.i/6)}:${Math.floor(c.j/8)}`;if(!districts.has(id))districts.set(id,[]);districts.get(id).push(c);}
   const serviceCells=new Set();
   for(const [district,list] of districts) {
     const spread=[.2,.5,.8];
@@ -97,7 +112,7 @@ export function createCityMap() {
   for(const c of cells) {
     instance('box','#f5f5ed',[c.x,.055,c.z],[STEP-18,.07,STEP-18]);
     if(serviceCells.has(c.id))continue;
-    const small=c.z>4200,industrial=c.x>2800&&c.z>0;
+    const small=c.z>4200*CITY_SCALE,industrial=c.x>2800*CITY_SCALE&&c.z>0;
     for(let i=0;i<3;i++)for(let j=0;j<3;j++) {
       if(i===1&&j===1&&rand()<.45){tree(c.x,c.z,8);continue;}
       const x=c.x+(i-1)*48+(rand()-.5)*8,z=c.z+(j-1)*48+(rand()-.5)*8;
@@ -115,7 +130,7 @@ export function createCityMap() {
     }
     for(const dx of [-67,67])for(const dz of [-61,61])tree(c.x+dx,c.z+dz,4+rand()*3);
   }
-  for(let k=0;k<1600;k++){const x=-1200+(rand()-.5)*2600,z=-8900+(rand()-.5)*3900;if(forest(x,z)&&land(x,z))tree(x,z,7+rand()*7);}
+  for(let k=0;k<180;k++){const x=(-1200+(rand()-.5)*2600)*CITY_SCALE,z=(-8900+(rand()-.5)*3900)*CITY_SCALE;if(forest(x,z)&&land(x,z))tree(x,z,7+rand()*7);}
   // Flatten the detailed service buildings by material to keep draw calls low at city scale.
   const detailed=new Map();
   for(const poi of services) {
@@ -127,7 +142,7 @@ export function createCityMap() {
       g.applyMatrix4(o.matrixWorld);const color=o.material.color.getHexString(),key=color+':'+poi.district;if(!detailed.has(key))detailed.set(key,[]);detailed.get(key).push(g);
     });
     disposeBuilding(b);buildingCount++;
-    instance('box',poi.type==='police-station'?'#d4dbf0':poi.type==='hospital'?'#eadcda':'#ecd4cc',[poi.x,.085,poi.z],[poi.scale<2?74:150,.06,poi.scale<2?74:150]);
+    instance('box',poi.type==='police-station'?'#d4dbf0':poi.type==='hospital'?'#eadcda':'#ecd4cc',[poi.x,.085,poi.z],[poi.scale<2?74:STEP-24,.06,poi.scale<2?74:STEP-24]);
     // Flags identify the service campuses from the wide city view.
     instance('box','#b2bec4',[poi.x+(poi.scale<2?28:54),20,poi.z+(poi.scale<2?28:50)],[1,40,1]);
     instance('box',s.color,[poi.x+(poi.scale<2?37:63),38,poi.z+(poi.scale<2?28:50)],[20,12,.8]);
@@ -156,7 +171,7 @@ export function createCityMap() {
   const signals=new THREE.InstancedMesh(geometries.lens,new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.5}),signalMatrices.length);signals.name='traffic-signal-lenses';
   const green=new THREE.Color('#60ad87'),red=new THREE.Color('#df847d');
   signalMatrices.forEach((m,i)=>{signals.setMatrixAt(i,m);signals.setColorAt(i,i%2?red:green);});signals.instanceMatrix.needsUpdate=true;signals.instanceColor.needsUpdate=true;city.add(signals);
-  city.userData={id:city.name,description:'Stylized procedural Mumbai-inspired coastal metropolis',seed:721,nodes,roads,services,signalNodes,stats:{roads:roads.length,intersections:intersections.length,signals:signalMatrices.length,buildings:buildingCount,trees:treeCount,districts:districts.size,services:services.length},bounds:{width:10700,length:23000}};
+  city.userData={id:city.name,description:'Stylized procedural Mumbai-inspired coastal metropolis',seed:721,nodes,roads,services,signalNodes,stats:{roads:roads.length,intersections:intersections.length,signals:signalMatrices.length,buildings:buildingCount,trees:treeCount,districts:districts.size,services:services.length},bounds:{width:10700*CITY_SCALE,length:23000*CITY_SCALE},areaFraction:CITY_AREA_FRACTION};
   // Runtime handles are not included in exported userData.
   city.signals=signals;
   let detailedView=null;
