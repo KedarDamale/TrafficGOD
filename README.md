@@ -1,10 +1,10 @@
 # TrafficGOD
 
-**Autonomous urban emergency response digital twin — low-poly city and fleet preview.**
+**Autonomous urban emergency response digital twin — low-poly emergency traffic simulation.**
 
 TrafficGOD aims to simulate a city where users inject emergencies and disruptions anywhere on a road network. The controller would then coordinate responder routes, traffic signals, and civilian traffic while measuring the effect on both emergency response and the wider city.
 
-> **Status:** Runnable Next.js / Three.js visual prototype. Includes 29 occupied vehicle models, six civilian paint colors, emergency liveries, heavy trucks and articulated trailers, plus a sample isometric neighborhood. SUMO integration, trained control policies, and measured performance results remain planned.
+> **Status:** Runnable Next.js / Three.js simulation demo. The frontend shows a large Mumbai-inspired coastal city and disruption controls. Every disruption selection currently runs a scripted ambulance round trip with signal preemption and civilian yielding. The city is procedural, not an exact Mumbai road map; SUMO integration and trained RL policies remain planned.
 
 ## The flagship challenge
 
@@ -65,21 +65,21 @@ npm ci
 npm run dev
 ```
 
-Open [localhost:3000](http://localhost:3000). Browse the neighborhood or choose a vehicle to inspect, change civilian paint, toggle motion and emergency beacons, and download a GLB. The scene follows the supplied pale isometric reference with simple buildings, trees, and colorful vehicles.
+Open [localhost:3000](http://localhost:3000). Choose a disruption and location, or click a road, then press **Simulate**. The ambulance leaves a hospital, travels to the incident, waits briefly, and returns to the hospital. Signals ahead give its corridor priority; crossing traffic waits and nearby cars yield. Pause, resume, reset, and return to the city overview with the map control.
 
-```sh
-npm test
-npm run build
-npm run export:models
-```
+The base map contains 7,507 road segments, 3,805 intersections, 29,494 buildings, 16,540 trees, and 156 service campuses. Every inhabited district has a hospital, fire station, and police station. Cars appear when a simulation starts. All seven disruption choices currently use the same ambulance scenario; other incident-specific behaviors are future work.
 
-The model factories are in [frontend/3d_models](frontend/3d_models/README.md). Native Three.js JSON exports live in `frontend/public/models`. See the [model integration guide](frontend/3d_models/README.md) for coordinates, animation, articulation, disposal, and asset loading.
+    npm test
+    npm run build
+    npm run export:models
 
-For a browser smoke check on Linux with Google Chrome installed, run `npm run test:browser` while the dev server is running. Set `CHROME_PATH` to use another Chromium executable. The check covers all 29 selections, a GLB download, paint controls, fixed service liveries, and mobile layout.
+One package manifest and lockfile live in frontend. The [model library](frontend/3d_models/README.md) includes 29 vehicles and 11 reusable building types. The cars have distinct sculpted bodies, cabins, lights, and grilles. JSON assets live in frontend/public/models.
 
-The city animation is a visual demonstration. The simulator roadmap above still applies.
+The [simulation controller](frontend/simulation/README.md) is separate from scene rendering. It provides the seam for adding a trained RL signal policy later. Routing and traffic reactions are deterministic demo logic, not learned control or measured research results.
 
-![Ivory District sample city](frontend/public/previews/ivory-district.png)
+For a browser smoke check on Linux with Google Chrome installed, run npm run test:browser while the dev server is running. Set CHROME_PATH for another Chromium executable. It checks disruption/location controls, a complete round trip, signal recovery, pause/resume, reset, and mobile layout.
+
+![Large coastal city simulation](frontend/public/previews/metropolis.png)
 
 ## References
 

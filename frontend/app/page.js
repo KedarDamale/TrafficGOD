@@ -1,2 +1,2 @@
-import Studio from '../components/Studio.js';
-export default function Page() { return <Studio />; }
+import Simulation from '../components/Simulation.js';
+export default function Page() { return <Simulation />; }

@@ -40,12 +40,12 @@ export function createCityMap() {
   function polygon(points,color,y,name) {
     const shape=new THREE.Shape();points.forEach(([x,z],i)=>i?shape.lineTo(x,-z):shape.moveTo(x,-z));shape.closePath();
     const g=new THREE.ShapeGeometry(shape);g.rotateX(-Math.PI/2);
-    const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1}));m.position.y=y;m.name=name;m.receiveShadow=true;city.add(m);
+    const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:3}));m.position.y=y;m.name=name;m.receiveShadow=true;city.add(m);
   }
-  const sea=new THREE.Mesh(new THREE.PlaneGeometry(60000,60000),new THREE.MeshStandardMaterial({color:'#cddfe8',roughness:1}));sea.rotation.x=-Math.PI/2;sea.position.y=-.12;sea.name='arabian-sea-and-harbor';city.add(sea);
+  const sea=new THREE.Mesh(new THREE.PlaneGeometry(60000,60000),new THREE.MeshStandardMaterial({color:'#a9c9dc',roughness:1}));sea.rotation.x=-Math.PI/2;sea.position.y=-.12;sea.name='arabian-sea-and-harbor';city.add(sea);
   polygon(PENINSULA,'#eef0ec',.02,'peninsula');polygon(MAINLAND,'#ecefe9',.02,'mainland');
-  const park=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#d7e2d4',roughness:1}));park.rotation.x=-Math.PI/2;park.position.set(-1200,.07,-8900);park.scale.set(1350,2000,1);park.name='northern-forest';city.add(park);
-  const water=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#b8d2df',roughness:1}));water.rotation.x=-Math.PI/2;water.position.set(400,.08,-6100);water.scale.set(650,450,1);water.name='inland-lake';city.add(water);
+  const park=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#c5d7be',roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));park.rotation.x=-Math.PI/2;park.position.set(-1200,.07,-8900);park.scale.set(1350,2000,1);park.name='northern-forest';city.add(park);
+  const water=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#91bcd4',roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));water.rotation.x=-Math.PI/2;water.position.set(400,.08,-6100);water.scale.set(650,450,1);water.name='inland-lake';city.add(water);
   const STEP=180, X=-5000, Z=-11520, COLS=60, ROWS=128, lookup=new Map();
   for(let i=0;i<=COLS;i++)for(let j=0;j<=ROWS;j++) {
     const x=X+i*STEP,z=Z+j*STEP;
@@ -88,7 +88,7 @@ export function createCityMap() {
       const c=list[Math.min(list.length-1,Math.floor(list.length*spread[k]))];
       const offsets=list.length<3?[[-42,-30],[42,-30],[0,40]][k]:[0,0];
       const x=c.x+offsets[0],z=c.z+offsets[1];
-      serviceCells.add(c.id);services.push({scale:list.length<3?1.3:2.8,id:`${type}:${district}`,type,district,x,z,roadNode:closest(x,z).id,entrance:{x,z:z+(list.length<3?20:35)}});
+      serviceCells.add(c.id);services.push({scale:list.length<3?1.3:2.8,id:`${type}:${district}`,type,district,x,z,roadNode:closest(x,z+(list.length<3?20:35)).id,entrance:{x,z:z+(list.length<3?20:35)}});
     });
   }
   let buildingCount=0,treeCount=0;
@@ -150,6 +150,7 @@ export function createCityMap() {
   }
   for(const [key,b] of batches) {
     const mesh=new THREE.InstancedMesh(geometries[b.kind],new THREE.MeshStandardMaterial({color:b.color,roughness:.92,flatShading:true}),b.matrices.length);
+    mesh.userData.detailOnly=['#c2d1d8','#e2e7e7','#cbd7db','#9baeb8','#60788a','#f7f7ed','#f3f4ed','#acb8af'].includes(b.color);
     mesh.name=`city-batch:${key}`;b.matrices.forEach((m,i)=>mesh.setMatrixAt(i,m));mesh.instanceMatrix.needsUpdate=true;mesh.receiveShadow=true;mesh.castShadow=b.kind!=='box'||!key.includes('#d8dfe3');mesh.computeBoundingSphere();city.add(mesh);
   }
   const signals=new THREE.InstancedMesh(geometries.lens,new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.5}),signalMatrices.length);signals.name='traffic-signal-lenses';
@@ -158,6 +159,14 @@ export function createCityMap() {
   city.userData={id:city.name,description:'Stylized procedural Mumbai-inspired coastal metropolis',seed:721,nodes,roads,services,signalNodes,stats:{roads:roads.length,intersections:intersections.length,signals:signalMatrices.length,buildings:buildingCount,trees:treeCount,districts:districts.size,services:services.length},bounds:{width:10700,length:23000}};
   // Runtime handles are not included in exported userData.
   city.signals=signals;
+  let detailedView=null;
+  city.setDetail=zoom=>{
+    const detail=zoom>3;
+    if(detail===detailedView)return;
+    detailedView=detail;
+    for(const child of city.children)if(child.userData.detailOnly)child.visible=detail;
+    signals.visible=detail;
+  };
   return city;
 }
 export function disposeCityMap(city) {

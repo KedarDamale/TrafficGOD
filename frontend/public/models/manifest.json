@@ -176,5 +176,63 @@
       "category": "vehicles"
     }
   ],
-  "map": "ivory-district.json"
+  "buildings": [
+    {
+      "id": "police-station",
+      "name": "Police Station",
+      "file": "police-station.json"
+    },
+    {
+      "id": "fire-station",
+      "name": "Fire Station",
+      "file": "fire-station.json"
+    },
+    {
+      "id": "hospital",
+      "name": "City Hospital",
+      "file": "hospital.json"
+    },
+    {
+      "id": "clinic",
+      "name": "Neighborhood Clinic",
+      "file": "clinic.json"
+    },
+    {
+      "id": "bungalow",
+      "name": "Garden Bungalow",
+      "file": "bungalow.json"
+    },
+    {
+      "id": "villa",
+      "name": "Courtyard Villa",
+      "file": "villa.json"
+    },
+    {
+      "id": "low-rise-apartment",
+      "name": "Low-rise Apartments",
+      "file": "low-rise-apartment.json"
+    },
+    {
+      "id": "mid-rise-apartment",
+      "name": "Mid-rise Apartments",
+      "file": "mid-rise-apartment.json"
+    },
+    {
+      "id": "office-tower",
+      "name": "Office Tower",
+      "file": "office-tower.json"
+    },
+    {
+      "id": "corner-shop",
+      "name": "Corner Shop",
+      "file": "corner-shop.json"
+    },
+    {
+      "id": "warehouse",
+      "name": "Warehouse",
+      "file": "warehouse.json"
+    }
+  ],
+  "map": "ivory-district.json",
+  "proceduralCity": "3d_models/maps/city-map.js"
 }

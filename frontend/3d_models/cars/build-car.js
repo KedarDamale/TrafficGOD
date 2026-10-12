@@ -23,6 +23,8 @@ export function buildCar(root, s) {
   const roofColor = s.roof || s.color;
   const roof = surface(roofColor, [[-halfRoof, rearRoofY, roofBack], [halfRoof, rearRoofY, roofBack], [halfRoof, roofY, roofFront], [-halfRoof, roofY, roofFront]], 'roof');
   roof.material.side = THREE.DoubleSide;
+  const slab = box(root, roofColor, [0, (rearRoofY + roofY) / 2 - .025, (roofFront + roofBack) / 2], [halfRoof * 2, .055, roofFront - roofBack], 'roof-slab');
+  slab.rotation.x = -Math.atan2(roofY - rearRoofY, roofFront - roofBack);
   for (const side of [-1, 1]) {
     const x = side * halfGlass, rx = side * halfRoof;
     surface('#84bacd', [[x, d.waist, front], [rx, roofY - .065, roofFront], [rx, rearRoofY - .065, roofBack], [x, d.waist, back]], 'side-glass', true);
@@ -65,7 +67,7 @@ export function buildCar(root, s) {
   box(root, '#34434f', [.32, seatY + .03, driverZ], [.32, .12, .39], 'driver-seat');
   occupant(root, [.32, minRoof - .63, driverZ], false, !!s.emergency).scale.setScalar(.76);
   cylinder(root, '#26313d', [.32, minRoof - .37, driverZ + .34], .105, .025, 'steering-wheel', 'z');
-  const noseZ = L * .491, lampY = d.nose - .06, tailZ = -L * .491;
+  const noseZ = L * .485 + .065, lampY = d.nose - .06, tailZ = -L * .485 - .065;
   function light(side, type) {
     const x = side * W * .33;
     if (type === 'round-pair') {

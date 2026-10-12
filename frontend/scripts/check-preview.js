@@ -1,40 +1,41 @@
 import { chromium } from '@playwright/test';
-import fs from 'node:fs/promises';
-const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless:true, args:['--no-sandbox','--enable-webgl','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({
+  executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless: true,
+  args: ['--no-sandbox', '--enable-webgl', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
+});
 try {
-  const page=await browser.newPage({viewport:{width:1440,height:1000},deviceScaleFactor:1});
-  const errors=[]; page.on('pageerror',e=>errors.push(e.message));
-  await page.goto('http://127.0.0.1:3000',{waitUntil:'networkidle'});
-  await page.waitForSelector('canvas');
-  await page.getByRole('button',{name:'Ⅱ Pause'}).click();
-  await page.screenshot({path:'/tmp/trafficgod-city.png'});
-  await page.getByRole('button',{name:/Maruti Suzuki Baleno/}).click();
-  await page.screenshot({path:'/tmp/trafficgod-baleno.png'});
-  await page.getByRole('button',{name:'Paint 3',exact:true}).click();
-  const download=page.waitForEvent('download');
-  await page.getByRole('button',{name:'Export GLB'}).click();
-  const glb=await download; await glb.saveAs('/tmp/trafficgod-baleno.glb');
-  const buf=await fs.readFile('/tmp/trafficgod-baleno.glb');
-  if(buf.toString('utf8',0,4)!=='glTF') throw Error('Invalid GLB header');
-  await page.getByRole('button',{name:'Utility',exact:true}).click();
-  await page.getByRole('button',{name:/Box Semi Trailer/}).click();
-  await page.screenshot({path:'/tmp/trafficgod-trailer.png'});
-  await page.getByRole('button',{name:/Police Patrol/}).click();
-  if(await page.getByRole('button',{name:'Paint 1',exact:true}).count()) throw Error('Emergency paint should be fixed');
-  await page.getByRole('button',{name:'Bikes',exact:true}).click();
-  await page.getByRole('button',{name:/Royal Enfield Classic 350/}).click();
-  await page.screenshot({path:'/tmp/trafficgod-bike.png'});
-  // Verify every model selection can render without JavaScript exceptions.
-  await page.getByRole('button',{name:'All',exact:true}).click();
-  const {VEHICLES}=await import('../3d_models/catalog.js');
-  for(const v of VEHICLES) {
-    await page.getByRole('button',{name:v.name,exact:false}).click();
-    await page.waitForTimeout(45);
-  }
-  await page.setViewportSize({width:390,height:844});
-  await page.getByRole('button',{name:'Neighborhood',exact:true}).click();
-  await page.screenshot({path:'/tmp/trafficgod-mobile.png'});
-  if(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth)) throw Error('Mobile page overflows');
-  if(errors.length) throw Error(errors.join('\n'));
-  console.log('29 models render; GLB export, palette, fixed liveries, city, and mobile layout passed.');
-} finally {await browser.close();}
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('http://127.0.0.1:3000', { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.getByRole('button', { name: 'Simulate', exact: true }).waitFor({ timeout: 90000 });
+  if (await page.locator('header, nav, .fleet-list').count()) throw Error('Old gallery UI remains');
+  await page.screenshot({ path: '/tmp/trafficgod-metropolis.png' });
+  console.log('City loaded and captured.');
+  await page.getByLabel('Disruption', { exact: true }).selectOption('fire');
+  await page.getByLabel('Incident location', { exact: true }).selectOption({ label: 'Central city' });
+  await page.getByRole('button', { name: 'Simulate', exact: true }).click({force:true});
+  await page.getByText('Ambulance → incident', { exact: true }).waitFor({ timeout: 30000 });
+  console.log('Ambulance dispatched.');
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: '/tmp/trafficgod-ambulance.png' });
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.getByText('Paused', { exact: true }).waitFor();
+  const progressBefore = await page.locator('.progress-track > div').getAttribute('style');
+  await page.waitForTimeout(600);
+  if (progressBefore !== await page.locator('.progress-track > div').getAttribute('style')) throw Error('Pause did not stop simulation');
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await page.getByText('Attending the incident', { exact: true }).waitFor({ timeout: 90000 });
+  await page.getByText('Ambulance → hospital', { exact: true }).waitFor({ timeout: 30000 });
+  await page.getByText('Returned to hospital', { exact: true }).waitFor({ timeout: 90000 });
+  const metrics = await page.locator('.run-metrics').textContent();
+  if (!metrics.includes('0 signals prioritised')) throw Error('Preemption was not cleared after return');
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+  await page.getByRole('button', { name: 'Simulate', exact: true }).waitFor();
+  if (await page.locator('.run-status').count()) throw Error('Reset did not clear the episode');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: '/tmp/trafficgod-simulation-mobile.png' });
+  if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw Error('Mobile layout overflows');
+  if (errors.length) throw Error(errors.join('\n'));
+  console.log('Simulation-only UI; disruption/location selectors; outbound, incident, return; pause/resume, reset, and mobile layout passed.');
+} finally { await browser.close(); }
