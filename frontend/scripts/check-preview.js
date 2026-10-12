@@ -1,6 +1,6 @@
 import { chromium } from '@playwright/test';
 import fs from 'node:fs/promises';
-const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless:true, args:['--no-sandbox','--enable-webgl','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless:true, args:['--no-sandbox','--enable-webgl','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
 try {
   const page=await browser.newPage({viewport:{width:1440,height:1000},deviceScaleFactor:1});
   const errors=[]; page.on('pageerror',e=>errors.push(e.message));

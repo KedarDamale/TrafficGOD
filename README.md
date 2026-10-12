@@ -1,10 +1,10 @@
 # TrafficGOD
 
-**Autonomous urban emergency response digital twin — project concept and roadmap.**
+**Autonomous urban emergency response digital twin — low-poly city and fleet preview.**
 
 TrafficGOD aims to simulate a city where users inject emergencies and disruptions anywhere on a road network. The controller would then coordinate responder routes, traffic signals, and civilian traffic while measuring the effect on both emergency response and the wider city.
 
-> **Status:** Planning. This repository currently contains the project brief and roadmap, not a runnable simulator, trained model, or measured performance results.
+> **Status:** Runnable Next.js / Three.js visual prototype. Includes 29 occupied vehicle models, six civilian paint colors, emergency liveries, heavy trucks and articulated trailers, plus a sample isometric neighborhood. SUMO integration, trained control policies, and measured performance results remain planned.
 
 ## The flagship challenge
 
@@ -57,7 +57,29 @@ Candidate learning methods include DQN, PPO, MAPPO, QMIX, and graph-based multi-
 
 ## Getting started
 
-There is no installation or demo command yet. The current starting point is the [project brief](AGENTS.md) and the staged roadmap above. Contributions can begin with a minimal SUMO network, scenario schema, and evaluation harness.
+The frontend and model library use one package manifest and lockfile, both inside `frontend`. Node.js 20.9+ is required.
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+Open [localhost:3000](http://localhost:3000). Browse the neighborhood or choose a vehicle to inspect, change civilian paint, toggle motion and emergency beacons, and download a GLB. The scene follows the supplied pale isometric reference with simple buildings, trees, and colorful vehicles.
+
+```sh
+npm test
+npm run build
+npm run export:models
+```
+
+The model factories are in [frontend/3d_models](frontend/3d_models/README.md). Native Three.js JSON exports live in `frontend/public/models`. See the [model integration guide](frontend/3d_models/README.md) for coordinates, animation, articulation, disposal, and asset loading.
+
+For a browser smoke check on Linux with Google Chrome installed, run `npm run test:browser` while the dev server is running. Set `CHROME_PATH` to use another Chromium executable. The check covers all 29 selections, a GLB download, paint controls, fixed service liveries, and mobile layout.
+
+The city animation is a visual demonstration. The simulator roadmap above still applies.
+
+![Ivory District sample city](frontend/public/previews/ivory-district.png)
 
 ## References
 
