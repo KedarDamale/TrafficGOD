@@ -18,7 +18,7 @@ export function createVehicle(id, options = {}) {
   if (bikeStyles.has(s.style)) buildBike(root, s);
   else if (truckStyles.has(s.style)) buildTruck(root, s);
   else buildCar(root, s);
-  root.userData.wheelRadius = bikeStyles.has(s.style) ? (s.style === 'scooter' ? .23 : .3) : truckStyles.has(s.style) ? .42 : ['rugged', 'suv', 'boxy', 'tall', 'mpv'].includes(s.style) ? .34 : .3;
+  root.userData.wheelRadius ??= bikeStyles.has(s.style) ? (s.style === 'scooter' ? .23 : .3) : truckStyles.has(s.style) ? .42 : ['rugged', 'suv', 'boxy', 'tall', 'mpv'].includes(s.style) ? .34 : .3;
   return root;
 }
 /** deltaSeconds is frame duration; speed is m/s; timeSeconds is a monotonic clock. */

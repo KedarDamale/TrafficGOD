@@ -1,0 +1,15 @@
+// Each car has an independent silhouette. Fractions are relative to its length/width.
+// +Z is the nose. The rear glass slope and roof proportions are deliberately exaggerated.
+export const CAR_DESIGNS = Object.freeze({
+  baleno: { waist: .88, nose: .73, tail: .79, roofFront: .055, roofBack: -.24, glassFront: .23, glassBack: -.43, roofWidth: .82, roofDrop: .025, wheel: .29, axle: .31, bevel: .085, lamps: 'swept', grille: 'slim', rear: 'hook', doors: 2 },
+  swift: { waist: .87, nose: .75, tail: .76, roofFront: .10, roofBack: -.23, glassFront: .24, glassBack: -.41, roofWidth: .77, roofDrop: .045, wheel: .30, axle: .29, bevel: .13, lamps: 'eyes', grille: 'mouth', rear: 'oval', doors: 2, spoiler: true },
+  nexon: { waist: 1.03, nose: .85, tail: .96, roofFront: .035, roofBack: -.16, glassFront: .23, glassBack: -.42, roofWidth: .73, roofDrop: .11, wheel: .34, axle: .30, bevel: .10, lamps: 'split', grille: 'ev', rear: 'connected', doors: 2, cladding: true, spoiler: true },
+  punch: { waist: 1.00, nose: .90, tail: .94, roofFront: .15, roofBack: -.30, glassFront: .25, glassBack: -.40, roofWidth: .87, roofDrop: .01, wheel: .33, axle: .29, bevel: .035, lamps: 'split-square', grille: 'block', rear: 'square', doors: 2, cladding: true, squareArches: true },
+  fronx: { waist: .96, nose: .78, tail: .84, roofFront: .00, roofBack: -.14, glassFront: .22, glassBack: -.43, roofWidth: .75, roofDrop: .15, wheel: .32, axle: .31, bevel: .07, lamps: 'triple', grille: 'wide', rear: 'connected', doors: 2, cladding: true, spoiler: true },
+  'wagon-r': { waist: .89, nose: .80, tail: .87, roofFront: .19, roofBack: -.34, glassFront: .28, glassBack: -.41, roofWidth: .91, roofDrop: 0, wheel: .28, axle: .30, bevel: .025, lamps: 'vertical', grille: 'slim', rear: 'tower', doors: 2 },
+  dzire: { waist: .91, nose: .76, tail: .82, roofFront: .07, roofBack: -.16, glassFront: .24, glassBack: -.29, roofWidth: .78, roofDrop: .05, wheel: .29, axle: .31, bevel: .08, lamps: 'swept', grille: 'chrome', rear: 'sedan', doors: 2, boot: true },
+  creta: { waist: 1.04, nose: .94, tail: .98, roofFront: .12, roofBack: -.31, glassFront: .26, glassBack: -.42, roofWidth: .86, roofDrop: .02, wheel: .35, axle: .31, bevel: .05, lamps: 'h', grille: 'chrome-wide', rear: 'connected', doors: 2, cladding: true, rails: true },
+  scorpio: { waist: 1.15, nose: 1.06, tail: 1.10, roofFront: .13, roofBack: -.36, glassFront: .25, glassBack: -.43, roofWidth: .92, roofDrop: 0, wheel: .38, axle: .30, bevel: .025, lamps: 'round-pair', grille: 'vertical-bars', rear: 'tower', doors: 3, cladding: true, squareArches: true, rails: true, step: true },
+  ertiga: { waist: .96, nose: .77, tail: .91, roofFront: .13, roofBack: -.36, glassFront: .29, glassBack: -.44, roofWidth: .85, roofDrop: .025, wheel: .30, axle: .33, bevel: .055, lamps: 'swept-long', grille: 'chrome', rear: 'hook-tall', doors: 3, rails: true },
+  'police-car': { waist: 1.06, nose: .91, tail: 1.0, roofFront: .12, roofBack: -.32, glassFront: .26, glassBack: -.43, roofWidth: .86, roofDrop: .02, wheel: .35, axle: .31, bevel: .045, lamps: 'h', grille: 'chrome-wide', rear: 'connected', doors: 2, cladding: true, rails: true }
+});
