@@ -1,96 +1,166 @@
 import * as THREE from 'three';
-/** Deterministic, texture-free ivory neighborhood; Y up, metre units, 90 × 90 m. */
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { BUILDINGS, createBuilding, disposeBuilding } from '../buildings/index.js';
+export { createNeighborhoodMap, disposeNeighborhoodMap } from './neighborhood.js';
+
+// A fictional Mumbai-inspired peninsula and mainland, not surveyed OSM geography.
+const PENINSULA = [[-3500,-11500],[1300,-11500],[2000,-9300],[1600,-7000],[1400,-5300],[800,-3800],[1400,-2400],[900,-500],[1200,1200],[500,3000],[600,4300],[-100,5600],[100,6500],[-600,8600],[-1200,10700],[-2000,11200],[-2300,9500],[-2800,7200],[-2400,4800],[-3000,2900],[-3300,600],[-3700,-1200],[-3300,-3400],[-4000,-5800],[-3500,-7900],[-3900,-9300]];
+const MAINLAND = [[2500,-11500],[5700,-11500],[5700,6000],[5200,6000],[4500,4000],[3800,2800],[3200,1000],[2800,-1400],[2100,-3700],[2600,-6100],[2000,-8800]];
+function inside(x,z,polygon) {
+  let result=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++) {
+    const [xi,zi]=polygon[i],[xj,zj]=polygon[j];
+    if((zi>z)!==(zj>z) && x<(xj-xi)*(z-zi)/(zj-zi)+xi) result=!result;
+  }
+  return result;
+}
+const land=(x,z)=>inside(x,z,PENINSULA)||inside(x,z,MAINLAND);
+const lake=(x,z)=>((x-400)/650)**2+((z+6100)/450)**2<1;
+const forest=(x,z)=>((x+1200)/1350)**2+((z+8900)/2000)**2<1;
+function random(seed) {let v=seed>>>0;return()=>{v=(1664525*v+1013904223)>>>0;return v/4294967296;};}
+
+/** Large deterministic, car-free base map. Road graph and service metadata power the demo controller. */
 export function createCityMap() {
-  const city = new THREE.Group(); city.name = 'ivory-district';
-  city.userData = { blocks: 9, style: 'low-poly-isometric', extent: 90 };
-  const geometries = new Map(), materials = new Map();
-  const material = c => { if (!materials.has(c)) materials.set(c, new THREE.MeshStandardMaterial({color:c, roughness: .95, flatShading:true})); return materials.get(c); };
-  const geom = (id, fn) => { if (!geometries.has(id)) geometries.set(id, fn()); return geometries.get(id); };
-  function add(g, c, pos, size, name, parent = city) { const m = new THREE.Mesh(g, material(c)); m.position.set(...pos); m.scale.set(...size); m.name = name; m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; }
-  const box = (c, pos, size, name, p) => add(geom('box', () => new THREE.BoxGeometry(1,1,1)), c, pos, size, name, p);
-  const cylinder = (c, pos, radius, height, name, p, n=8) => add(geom(`cyl-${n}`, () => new THREE.CylinderGeometry(1,1,1,n)), c, pos, [radius,height,radius], name, p);
-  box('#e4e9ef', [0,-.65,0], [94,1.2,94], 'city-plinth');
-  box('#d9e0e8', [0,-1.3,0], [96,.18,96], 'plinth-shadow');
-  // Pale roads sit below raised sidewalks; lane marks give the street grid legibility.
-  for (const t of [-44,-16,16,44]) {
-    box('#d8dfe8', [t,.005,0], [6,.04,92], 'north-south-road');
-    box('#d8dfe8', [0,.005,t], [92,.04,6], 'east-west-road');
-    for (let i=-41; i<=41; i+=5) {
-      if ([-44,-16,16,44].some(j => Math.abs(i-j)<5)) continue;
-      box('#f7f9fb', [t,.032,i], [.09,.015,1.8], 'lane-dash');
-      box('#f7f9fb', [i,.032,t], [1.8,.015,.09], 'lane-dash');
+  const city=new THREE.Group();city.name='mumbai-inspired-city';
+  const rand=random(721), batches=new Map(), nodes=[], roads=[], cells=[], services=[];
+  const roofShape=new THREE.Shape();roofShape.moveTo(-.5,0);roofShape.lineTo(0,1);roofShape.lineTo(.5,0);roofShape.closePath();
+  const gable=new THREE.ExtrudeGeometry(roofShape,{depth:1,bevelEnabled:false});gable.translate(0,0,-.5);
+  const geometries={box:new THREE.BoxGeometry(1,1,1),gable,crown:new THREE.IcosahedronGeometry(1,0),lens:new THREE.SphereGeometry(1,6,3)};
+  const transform=new THREE.Object3D();
+  function instance(kind,color,pos,size,angle=0) {
+    const key=`${kind}:${color}:${Math.floor(pos[0]/1800)}:${Math.floor(pos[2]/1800)}`;
+    if(!batches.has(key)) batches.set(key,{kind,color,matrices:[]});
+    transform.position.set(...pos);transform.scale.set(...size);transform.rotation.set(0,angle,0);transform.updateMatrix();
+    batches.get(key).matrices.push(transform.matrix.clone());
+  }
+  function segment(a,b,width,y,color,name='road') {
+    const dx=b.x-a.x,dz=b.z-a.z,length=Math.hypot(dx,dz);
+    instance('box',color,[(a.x+b.x)/2,y,(a.z+b.z)/2],[width,.08,length],Math.atan2(dx,dz));
+  }
+  function polygon(points,color,y,name) {
+    const shape=new THREE.Shape();points.forEach(([x,z],i)=>i?shape.lineTo(x,-z):shape.moveTo(x,-z));shape.closePath();
+    const g=new THREE.ShapeGeometry(shape);g.rotateX(-Math.PI/2);
+    const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1}));m.position.y=y;m.name=name;m.receiveShadow=true;city.add(m);
+  }
+  const sea=new THREE.Mesh(new THREE.PlaneGeometry(60000,60000),new THREE.MeshStandardMaterial({color:'#cddfe8',roughness:1}));sea.rotation.x=-Math.PI/2;sea.position.y=-.12;sea.name='arabian-sea-and-harbor';city.add(sea);
+  polygon(PENINSULA,'#eef0ec',.02,'peninsula');polygon(MAINLAND,'#ecefe9',.02,'mainland');
+  const park=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#d7e2d4',roughness:1}));park.rotation.x=-Math.PI/2;park.position.set(-1200,.07,-8900);park.scale.set(1350,2000,1);park.name='northern-forest';city.add(park);
+  const water=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color:'#b8d2df',roughness:1}));water.rotation.x=-Math.PI/2;water.position.set(400,.08,-6100);water.scale.set(650,450,1);water.name='inland-lake';city.add(water);
+  const STEP=180, X=-5000, Z=-11520, COLS=60, ROWS=128, lookup=new Map();
+  for(let i=0;i<=COLS;i++)for(let j=0;j<=ROWS;j++) {
+    const x=X+i*STEP,z=Z+j*STEP;
+    if(!land(x,z)||lake(x,z)||forest(x,z)) continue;
+    const n={id:`${i}:${j}`,x,z,i,j,neighbors:[],signal:null};lookup.set(n.id,n);nodes.push(n);
+  }
+  function connect(a,b,arterial=false,bridge=false) {
+    const width=arterial?22:12;
+    roads.push({a:a.id,b:b.id,width,bridge,length:Math.hypot(a.x-b.x,a.z-b.z)});a.neighbors.push(b.id);b.neighbors.push(a.id);
+    segment(a,b,width,bridge?.4:.07,arterial?'#ced7de':'#d8dfe3');
+    if(arterial) segment(a,b,.25,bridge?.47:.13,'#f4f4e9');
+    if(bridge) {
+      const distance=Math.hypot(a.x-b.x,a.z-b.z),count=Math.floor(distance/140);
+      for(let k=1;k<count;k++){const t=k/count,x=a.x+(b.x-a.x)*t,z=a.z+(b.z-a.z)*t;instance('box','#b9c8cf',[x,-1,z],[3,3,4]);}
+      for(const side of [-1,1]) {const dx=b.x-a.x,dz=b.z-a.z,d=Math.hypot(dx,dz);segment({x:a.x+side*dz/d*10,z:a.z-side*dx/d*10},{x:b.x+side*dz/d*10,z:b.z-side*dx/d*10},.8,1.4,'#b7c8d1');}
     }
   }
-  function tree(x,z,scale=1) {
-    const p = new THREE.Group(); p.name='tree'; p.position.set(x,.25,z); p.scale.setScalar(scale); city.add(p);
-    cylinder('#aab8b9',[0,1,0],.16,2,'trunk',p,6);
-    add(geom('crown',()=>new THREE.IcosahedronGeometry(1,0)), '#bac9c7',[0,2.45,0],[1.25,1.5,1.2],'tree-crown',p);
-    add(geom('crown',()=>new THREE.IcosahedronGeometry(1,0)), '#cdd8d2',[.45,3,0],[.85,.9,.8],'tree-crown',p);
+  for(const n of nodes) for(const [di,dj] of [[1,0],[0,1]]) {
+    const next=lookup.get(`${n.i+di}:${n.j+dj}`);
+    if(next && land((n.x+next.x)/2,(n.z+next.z)/2)) connect(n,next,di===1?n.j%8===0:n.i%7===0);
   }
-  function building(x,z,w,d,h,c='#f0f3f4',name='residential') {
-    const p=new THREE.Group(); p.name=name; p.position.set(x,.27,z); city.add(p);
-    box(c,[0,h/2,0],[w,h,d],'building',p);
-    box('#e3e9ec',[0,h+.15,0],[w+.18,.3,d+.18],'roof-rim',p);
-    box('#f4f6f7',[w*.12,h+.43,-d*.1],[w*.5,.32,d*.45],'rooftop',p);
-    for (const side of [-1,1]) {
-      for (let floor=1.2;floor<h-.5;floor+=1.8) {
-        for (let a=-w*.32;a<=w*.33;a+=2) box('#d1dce2',[a,floor,side*(d/2+.012)],[.65,.7,.024],'window',p);
-        for (let a=-d*.32;a<=d*.33;a+=2) box('#d1dce2',[side*(w/2+.012),floor,a],[.024,.7,.65],'window',p);
-      }
+  const closest=(x,z,predicate=()=>true)=>nodes.filter(predicate).reduce((best,n)=>!best||Math.hypot(n.x-x,n.z-z)<Math.hypot(best.x-x,best.z-z)?n:best,null);
+  const west=closest(-1600,4500,n=>n.x<1500),east=closest(4800,4500,n=>n.x>2500);
+  connect(west,east,true,true);
+  const coastalA=closest(-3100,1200,n=>n.x<0),coastalB=closest(-2500,6600,n=>n.x<0);
+  const via={id:'sea-link',x:-3900,z:4100,neighbors:[],signal:null};nodes.push(via);lookup.set(via.id,via);connect(coastalA,via,true,true);connect(via,coastalB,true,true);
+  for(let i=0;i<COLS;i++)for(let j=0;j<ROWS;j++) {
+    const corners=[lookup.get(`${i}:${j}`),lookup.get(`${i+1}:${j}`),lookup.get(`${i}:${j+1}`),lookup.get(`${i+1}:${j+1}`)];
+    if(corners.some(n=>!n)) continue;
+    const x=X+(i+.5)*STEP,z=Z+(j+.5)*STEP;if(!land(x,z)||lake(x,z)||forest(x,z))continue;
+    cells.push({id:`lot:${i}:${j}`,x,z,i,j});
+  }
+  // Every inhabited district receives all three emergency services on separate blocks.
+  const districts=new Map();
+  for(const c of cells) {const id=`${Math.floor(c.i/10)}:${Math.floor(c.j/12)}`;if(!districts.has(id))districts.set(id,[]);districts.get(id).push(c);}
+  const serviceCells=new Set();
+  for(const [district,list] of districts) {
+    const spread=[.2,.5,.8];
+    ['hospital','fire-station','police-station'].forEach((type,k)=>{
+      const c=list[Math.min(list.length-1,Math.floor(list.length*spread[k]))];
+      const offsets=list.length<3?[[-42,-30],[42,-30],[0,40]][k]:[0,0];
+      const x=c.x+offsets[0],z=c.z+offsets[1];
+      serviceCells.add(c.id);services.push({scale:list.length<3?1.3:2.8,id:`${type}:${district}`,type,district,x,z,roadNode:closest(x,z).id,entrance:{x,z:z+(list.length<3?20:35)}});
+    });
+  }
+  let buildingCount=0,treeCount=0;
+  const colors=['#e8ebe8','#e5e9ea','#f0ede4','#dde5e5','#dce3e8','#cbd8df'];
+  function tree(x,z,size=5) {instance('box','#acb8af',[x,size*.48,z],[.55,size,.55]);instance('crown','#b9ccbe',[x,size*1.25,z],[size*.62,size*.85,size*.62]);treeCount++;}
+  for(const c of cells) {
+    instance('box','#f5f5ed',[c.x,.055,c.z],[STEP-18,.07,STEP-18]);
+    if(serviceCells.has(c.id))continue;
+    const small=c.z>4200,industrial=c.x>2800&&c.z>0;
+    for(let i=0;i<3;i++)for(let j=0;j<3;j++) {
+      if(i===1&&j===1&&rand()<.45){tree(c.x,c.z,8);continue;}
+      const x=c.x+(i-1)*48+(rand()-.5)*8,z=c.z+(j-1)*48+(rand()-.5)*8;
+      const w=industrial?30:14+rand()*13,d=industrial?33:14+rand()*14;
+      const h=industrial?10:small?5+rand()*8:8+Math.floor(rand()*8)*4;
+      instance('box',colors[Math.floor(rand()*colors.length)],[x,h/2+.15,z],[w,h,d]);
+      if(small||industrial)instance('gable','#b1c1ca',[x,h+.15,z],[w+1.2,industrial?3:2.5,d+1.2]);
+      else instance('box','#f3f4ed',[x,h+.3,z],[w+.8,.5,d+.8]);
+      instance('box','#c2d1d8',[x,h*.55,z+d/2+.12],[w*.70,h*.52,.15]);
+      instance('box','#c2d1d8',[x+w/2+.12,h*.55,z],[.15,h*.52,d*.70]);
+      for(let floor=3;floor<h-1;floor+=5) instance('box','#e2e7e7',[x,floor,z+d/2+.23],[w*.75,.4,.12]);
+      if(h>16)instance('box','#cbd7db',[x+w*.16,h+1,z-d*.15],[w*.25,1.5,d*.25]);
+      else if(small) instance('box','#ecece4',[x,2.4,z+d*.55],[w*.55,.15,3]);
+      buildingCount++;
     }
-    box('#acbeca',[0,1,d/2+.03],[1.3,2,.03],'entry',p);
-    return p;
+    for(const dx of [-67,67])for(const dz of [-61,61])tree(c.x+dx,c.z+dz,4+rand()*3);
   }
-  for(const x of [-30,0,30]) for(const z of [-30,0,30]) {
-    const width=x===0?25:21, depth=z===0?25:21;
-    box('#f1f4f5',[x,.12,z],[width,.24,depth],'sidewalk-block');
-    // Small roadside planting pockets and benches frame every city block.
+  for(let k=0;k<1600;k++){const x=-1200+(rand()-.5)*2600,z=-8900+(rand()-.5)*3900;if(forest(x,z)&&land(x,z))tree(x,z,7+rand()*7);}
+  // Flatten the detailed service buildings by material to keep draw calls low at city scale.
+  const detailed=new Map();
+  for(const poi of services) {
+    const s=BUILDINGS.find(b=>b.id===poi.type),b=createBuilding(poi.type);b.position.set(poi.x,.15,poi.z);b.scale.setScalar(poi.scale);b.updateMatrixWorld(true);
+    b.traverse(o=>{
+      if(!o.isMesh)return;
+      let g=o.geometry.clone();if(g.index){const expanded=g.toNonIndexed();g.dispose();g=expanded;}
+      for(const a of Object.keys(g.attributes))if(!['position','normal'].includes(a))g.deleteAttribute(a);
+      g.applyMatrix4(o.matrixWorld);const color=o.material.color.getHexString(),key=color+':'+poi.district;if(!detailed.has(key))detailed.set(key,[]);detailed.get(key).push(g);
+    });
+    disposeBuilding(b);buildingCount++;
+    instance('box',poi.type==='police-station'?'#d4dbf0':poi.type==='hospital'?'#eadcda':'#ecd4cc',[poi.x,.085,poi.z],[poi.scale<2?74:150,.06,poi.scale<2?74:150]);
+    // Flags identify the service campuses from the wide city view.
+    instance('box','#b2bec4',[poi.x+(poi.scale<2?28:54),20,poi.z+(poi.scale<2?28:50)],[1,40,1]);
+    instance('box',s.color,[poi.x+(poi.scale<2?37:63),38,poi.z+(poi.scale<2?28:50)],[20,12,.8]);
+  }
+  for(const [key,list] of detailed) {
+    const color=key.split(':')[0];
+    const g=mergeGeometries(list,false);list.forEach(g=>g.dispose());
+    const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:`#${color}`,roughness:.92,flatShading:true}));m.name='emergency-service-buildings';m.castShadow=true;m.receiveShadow=true;city.add(m);
+  }
+  const intersections=nodes.filter(n=>n.neighbors.length>=3),signalMatrices=[],signalNodes=[];
+  for(const n of intersections) {
+    instance('box','#e2e8e8',[n.x,.11,n.z],[13,.06,13]);
+    for(let i=0;i<4;i++) {instance('box','#f7f7ed',[n.x-4+i*2.5,.13,n.z+9],[1.15,.03,4]);instance('box','#f7f7ed',[n.x+9,.13,n.z-4+i*2.5],[4,.03,1.15]);}
     for(const side of [-1,1]) {
-      for(const offset of [-7,7]) tree(x+side*(width/2-1.4),z+offset,.7);
-      box('#ced9d8',[x+side*(width/2-1.2),.38,z],[1.3,.35,2.8],'planter');
-      box('#b2bdc5',[x+side*(width/2-2.3),.7,z+3],[.55,.14,1.6],'bench');
+      const x=n.x+side*9,z=n.z+9;
+      instance('box','#9baeb8',[x,2.5,z],[.24,5,.24]);instance('box','#60788a',[x,5,z],[.75,1.6,.65]);
+      transform.position.set(x,5,z+.38);transform.scale.set(.23,.23,.12);transform.rotation.set(0,0,0);transform.updateMatrix();signalMatrices.push(transform.matrix.clone());signalNodes.push({node:n.id,axis:side<0?'x':'z'});
     }
-    const civic=(x===30 && Math.abs(z)===30)||(x===-30 && z===30);
-    if(civic) {
-      const medical=z<0, police=x<0, col=police?'#8594ea':'#e98689';
-      const p=building(x,z,12,10,medical?7:5,col,medical?'hospital':police?'police-station':'fire-station');
-      box(col,[5.8,1.5,2],[5,3,7],'service-wing',p);
-      if(medical) {
-        box('#fff8ee',[0,5,5.03],[.6,2.3,.06],'medical-cross',p);
-        box('#fff8ee',[0,5,5.065],[2.3,.6,.06],'medical-cross',p);
-      } else if(police) cylinder('#f2daa1',[0,3,5.1],.85,.07,'police-badge',p,6).rotation.x=Math.PI/2;
-      else for(const dx of [-3,0,3]) box('#ba5a64',[dx,1.5,5.04],[2.3,2.6,.045],'fire-bay',p);
-      for(let i=0;i<4;i++) box('#d4dce3',[x-6+i*3.4,.28,z+8],[.06,.02,3],'parking-mark');
-    } else if(x===0 && z===0) {
-      building(-4,-3,8,10,12,'#7c8fe9','blue-office');
-      building(4,2,8,8,8,'#a2b0f0','creative-studio');
-      box('#7c8fe9',[0,.6,9],[13,.6,2.2],'civic-plaza');
-    } else if(x===-30 && z===0) {
-      box('#e0e8e3',[x,.27,z],[13,.08,15],'park-lawn');
-      box('#f6f5ef',[x,.33,z],[2,.04,17],'park-path');
-      for(const dx of [-4,4]) for(const dz of [-5,1,5]) tree(x+dx,z+dz,1.1);
-      cylinder('#c2dce3',[x,.53,z],2.3,.35,'fountain',city,16);
-      cylinder('#edf3f4',[x,1.05,z],.35,1,'fountain-centre');
-    } else {
-      const heights=[4,6,8,5];
-      for(let i=0;i<4;i++) building(x+(i%2?4.4:-4.4),z+(i<2?-4.4:4.4),6.2,6.6,heights[(i+Math.abs(x/30)+Math.abs(z/30))%4]);
-    }
+    n.signal=signalMatrices.length-2;
   }
-  for(const x of [-16,16]) for(const z of [-16,16]) {
-    for(const side of [-1,1]) {
-      for(let i=0;i<6;i++) {
-        box('#f6f8fa',[x-2.5+i,.038,z+side*4.1],[.55,.02,1.6],'crosswalk');
-        box('#f6f8fa',[x+side*4.1,.038,z-2.5+i],[1.6,.02,.55],'crosswalk');
-      }
-      cylinder('#899baa',[x+side*4.3,1.5,z+4.3],.07,3,'signal-pole');
-      box('#516577',[x+side*4.3,3,z+4.3],[.35,.7,.3],'signal-housing');
-      cylinder(side<0?'#73b9a2':'#eb9d98',[x+side*4.3,3,z+4.47],.105,.05,'signal-light').rotation.x=Math.PI/2;
-    }
+  for(const [key,b] of batches) {
+    const mesh=new THREE.InstancedMesh(geometries[b.kind],new THREE.MeshStandardMaterial({color:b.color,roughness:.92,flatShading:true}),b.matrices.length);
+    mesh.name=`city-batch:${key}`;b.matrices.forEach((m,i)=>mesh.setMatrixAt(i,m));mesh.instanceMatrix.needsUpdate=true;mesh.receiveShadow=true;mesh.castShadow=b.kind!=='box'||!key.includes('#d8dfe3');mesh.computeBoundingSphere();city.add(mesh);
   }
+  const signals=new THREE.InstancedMesh(geometries.lens,new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.5}),signalMatrices.length);signals.name='traffic-signal-lenses';
+  const green=new THREE.Color('#60ad87'),red=new THREE.Color('#df847d');
+  signalMatrices.forEach((m,i)=>{signals.setMatrixAt(i,m);signals.setColorAt(i,i%2?red:green);});signals.instanceMatrix.needsUpdate=true;signals.instanceColor.needsUpdate=true;city.add(signals);
+  city.userData={id:city.name,description:'Stylized procedural Mumbai-inspired coastal metropolis',seed:721,nodes,roads,services,signalNodes,stats:{roads:roads.length,intersections:intersections.length,signals:signalMatrices.length,buildings:buildingCount,trees:treeCount,districts:districts.size,services:services.length},bounds:{width:10700,length:23000}};
+  // Runtime handles are not included in exported userData.
+  city.signals=signals;
   return city;
 }
 export function disposeCityMap(city) {
-  const geometry=new Set(), materials=new Set();
-  city.traverse(o=>{if(o.isMesh){geometry.add(o.geometry); materials.add(o.material);}});
+  const geometry=new Set(),materials=new Set();city.traverse(o=>{if(o.isMesh){geometry.add(o.geometry);materials.add(o.material);if(o.isInstancedMesh)o.dispose();}});
   geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());city.removeFromParent();
 }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { VEHICLES, PAINT_COLORS, createVehicle, animateVehicle, disposeVehicle } from '../3d_models/index.js';
-import { createCityMap, disposeCityMap } from '../3d_models/maps/city-map.js';
+import { createNeighborhoodMap, disposeNeighborhoodMap } from '../3d_models/maps/city-map.js';
 
 test('all 29 models have finite, road-level geometry and exactly one occupant', () => {
   assert.equal(VEHICLES.length, 29);
@@ -68,12 +68,12 @@ test('animation spins wheels, alternates beacons, and clamps articulation', () =
 });
 
 test('city contains nine blocks and all three service buildings', () => {
-  const city=createCityMap();
+  const city=createNeighborhoodMap();
   for (const name of ['hospital','fire-station','police-station','tree','crosswalk']) assert.ok(city.getObjectByName(name),name);
   assert.equal(city.children.filter(o=>o.name==='sidewalk-block').length,9);
   const size = new THREE.Box3().setFromObject(city).getSize(new THREE.Vector3());
   assert.equal(size.x,96);assert.equal(size.z,96);
-  disposeCityMap(city);
+  disposeNeighborhoodMap(city);
 });
 
 test('unknown IDs and invalid palette indexes produce useful errors', () => {
