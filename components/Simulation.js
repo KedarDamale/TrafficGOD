@@ -24,6 +24,7 @@ function SimulationCanvas({ onReady, onState, onError }) {
     renderer.toneMappingExposure = .95;
     element.appendChild(renderer.domElement);
     renderer.domElement.setAttribute('aria-label', 'Interactive coastal city traffic simulation');
+    renderer.domElement.tabIndex = 0;
     const scene = new THREE.Scene();
     const viewHeight=620;
     const camera = new THREE.OrthographicCamera(-viewHeight*1.6,viewHeight*1.6,viewHeight,-viewHeight,1,40000);
@@ -39,7 +40,12 @@ function SimulationCanvas({ onReady, onState, onError }) {
     controls.maxZoom = 120;
     controls.maxPolarAngle = Math.PI * .47;
     controls.minPolarAngle = .15;
-    controls.screenSpacePanning = true;
+    controls.screenSpacePanning = false;
+    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
+    controls.zoomToCursor = true;
+    controls.keyPanSpeed = 35;
+    controls.listenToKeyEvents(renderer.domElement);
     scene.add(new THREE.HemisphereLight('#ffffff', '#b5c5d1', 1.6));
     const sun = new THREE.DirectionalLight('#fff6e8', 1.3);
     sun.position.set(-10000, 25000, 12000);
@@ -112,6 +118,9 @@ function SimulationCanvas({ onReady, onState, onError }) {
       camera.updateProjectionMatrix(); controls.update();
     }
     function publish() {
+      renderer.domElement.dataset.cameraTarget=JSON.stringify(controls.target.toArray());
+      renderer.domElement.dataset.cameraPosition=JSON.stringify(camera.position.toArray());
+      renderer.domElement.dataset.cameraZoom=String(camera.zoom);
       onState({
         ...controller.snapshot(), yielding: traffic.yielding, trafficCount:traffic.agents.length, stats: map.stats, locations, customTarget:!!incident,
         targetName: clickedName||locations.find(l => l.node === target.id)?.name || 'Selected road', target: target.id,selectedBuilding
@@ -156,7 +165,10 @@ function SimulationCanvas({ onReady, onState, onError }) {
     const observer = new ResizeObserver(resize); observer.observe(element); resize();
     const raycaster = new THREE.Raycaster(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     let pointerStart = null;
-    const down = event => { pointerStart = { x: event.clientX, y: event.clientY }; };
+    const down = event => {
+      renderer.domElement.focus({preventScroll:true});
+      pointerStart = event.button===0?{ x: event.clientX, y: event.clientY }:null;
+    };
     const up = event => {
       if (!pointerStart || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5) return;
       if (!['idle', 'completed'].includes(controller.phase)) return;
@@ -170,8 +182,10 @@ function SimulationCanvas({ onReady, onState, onError }) {
       }
     };
     const interruptFollow = () => { follow = false; };
+    const keyboardNavigation = event => { if(event.key.startsWith('Arrow'))follow=false; };
     controls.addEventListener('start', interruptFollow);
     renderer.domElement.addEventListener('pointerdown', down); renderer.domElement.addEventListener('pointerup', up);
+    renderer.domElement.addEventListener('keydown', keyboardNavigation);
     function tick() {
       const now = performance.now(), dt = Math.min((now - last) / 1000, .25); last = now;
       controller.tick(dt);
@@ -241,6 +255,7 @@ function SimulationCanvas({ onReady, onState, onError }) {
     return () => {
       cancelAnimationFrame(frame); observer.disconnect(); controls.removeEventListener('start', interruptFollow); controls.dispose();
       renderer.domElement.removeEventListener('pointerdown', down); renderer.domElement.removeEventListener('pointerup', up);
+      renderer.domElement.removeEventListener('keydown', keyboardNavigation);
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       renderer.domElement.removeEventListener('webglcontextrestored', contextRestored);
       clearEmergency(); fleet.dispose(); disposeCityMap(city);
@@ -284,7 +299,7 @@ export default function Simulation() {
         {state.customTarget&&<option value="custom-road">{state.targetName}</option>}
         {state.target&&!state.customTarget&&!state.locations.some(l=>l.node===state.target)&&<option value={state.target}>{state.targetName}</option>}
       </select>
-      <p className="location-hint">Or click a road on the map. Drag to pan; scroll to zoom.</p>
+      <p className="location-hint">Click a road or building. Drag to pan; right-drag to rotate; scroll to zoom. Arrow keys move the view.</p>
       {state.selectedBuilding&&<div className="selected-building"><strong>{state.selectedBuilding.name}</strong><span>{state.selectedBuilding.district} · {state.selectedBuilding.id}</span><span>{state.selectedBuilding.roadName}</span></div>}
       <button className="simulate-button" disabled={!ready || active} onClick={() => { setError(''); runtime.current?.simulate(event); }}>
         {graphicsFailed ? 'Graphics unavailable' : !ready ? 'Building city…' : active ? 'Simulation running' : 'Simulate'}

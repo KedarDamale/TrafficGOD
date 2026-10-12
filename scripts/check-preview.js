@@ -10,6 +10,21 @@ try {
   await page.goto(process.env.PREVIEW_URL||'http://127.0.0.1:3000', { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.getByRole('button', { name: 'Simulate', exact: true }).waitFor({ timeout: 90000 });
   if (await page.locator('header, nav, .fleet-list').count()) throw Error('Old gallery UI remains');
+  const canvas=page.locator('.simulation-canvas canvas');
+  const cameraView=async()=>({target:JSON.parse(await canvas.getAttribute('data-camera-target')),position:JSON.parse(await canvas.getAttribute('data-camera-position')),zoom:Number(await canvas.getAttribute('data-camera-zoom'))});
+  const beforePan=await cameraView();
+  await page.mouse.move(1000,500);await page.mouse.down();await page.mouse.move(820,610,{steps:12});await page.mouse.up();
+  await page.waitForTimeout(900);
+  const afterPan=await cameraView();
+  if(Math.hypot(afterPan.target[0]-beforePan.target[0],afterPan.target[2]-beforePan.target[2])<10)throw Error('Left drag did not pan across the city');
+  const oldDirection=beforePan.position.map((n,i)=>n-beforePan.target[i]),newDirection=afterPan.position.map((n,i)=>n-afterPan.target[i]);
+  if(Math.hypot(...oldDirection.map((n,i)=>n-newDirection[i]))>1)throw Error('Left drag rotated instead of panning');
+  await canvas.press('ArrowRight');await page.waitForTimeout(800);
+  const afterKey=await cameraView();
+  if(Math.hypot(afterKey.target[0]-afterPan.target[0],afterKey.target[2]-afterPan.target[2])<1)throw Error('Arrow key did not move the view');
+  await page.mouse.move(1000,500);await page.mouse.wheel(0,-200);await page.waitForTimeout(800);
+  if((await cameraView()).zoom<=afterKey.zoom)throw Error('Scroll did not zoom in');
+  console.log('Drag pans without orbiting; arrow keys pan; scroll zooms.');
   await page.screenshot({ path: '/tmp/trafficgod-metropolis.png' });
   console.log('City loaded and captured.');
   for(const point of [{x:720,y:500},{x:820,y:420},{x:620,y:520},{x:910,y:600},{x:530,y:350}]){

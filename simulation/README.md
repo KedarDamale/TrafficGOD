@@ -12,7 +12,7 @@ Every disruption option intentionally runs the same demonstration:
 6. Return along the route to the hospital entrance.
 7. Clear priority and restore the normal alternating signal cycle.
 
-Only one episode can run at a time. Pause freezes vehicle progress and signal timing; reset removes the ambulance and its corridor, returns to the overview, and keeps ambient traffic running. Users can choose a preset area or click a road while no episode is running.
+Only one episode can run at a time. Pause freezes vehicle progress and signal timing; reset removes the ambulance and its corridor, returns to the overview, and keeps ambient traffic running. Users can choose a preset area or click a road or named building while no episode is running. Left-drag and single-finger drag pan on the ground plane; scroll/pinch zoom toward the cursor; right-drag rotates. Arrow keys pan when the canvas has focus. Pointer navigation and arrow keys stop ambulance following, so the camera remains free to explore.
 
 ## Controller boundary
 
