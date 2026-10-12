@@ -57,7 +57,7 @@ Entrances face +Z and the foundation rests at Y=0. Building geometry and materia
 
 ## Maps and exports
 
-maps/city-map.js creates the compact Mumbai-inspired city with exactly 150 curved streets and one/two/four-lane profiles used by the simulation. This is a deterministic fictional map rather than actual Mumbai geography. City userData contains the road graph, service positions, and counts. City signals holds the instanced signal lenses for live color updates.
+maps/city-map.js creates the compact Mumbai-inspired city with exactly 100 curved streets and one/two/four-lane profiles used by the simulation. This is a deterministic fictional map rather than actual Mumbai geography. City userData contains the road graph, named service positions, all 1,010 named ordinary building plots, and counts. The footprint is 1.38 × 1.52 km, with street frontages and densely filled blocks. Areas and streets use Marathi names; all 1,028 instantiated buildings have individual names and addresses. City signals holds the instanced signal lenses for live color updates.
 
 maps/neighborhood.js retains the smaller Ivory District through createNeighborhoodMap and disposeNeighborhoodMap.
 
