@@ -4,7 +4,7 @@
 
 TrafficGOD aims to simulate a city where users inject emergencies and disruptions anywhere on a road network. The controller would then coordinate responder routes, traffic signals, and civilian traffic while measuring the effect on both emergency response and the wider city.
 
-> **Status:** Runnable Next.js / Three.js simulation demo. The frontend shows a large Mumbai-inspired coastal city and disruption controls. Every disruption selection currently runs a scripted ambulance round trip with signal preemption and civilian yielding. The city is procedural, not an exact Mumbai road map; SUMO integration and trained RL policies remain planned.
+> **Status:** Runnable Next.js / Three.js simulation demo. The frontend shows a compact Mumbai-inspired coastal city and disruption controls. Every disruption selection currently runs a scripted ambulance round trip with signal preemption and civilian yielding. The city is procedural, not an exact Mumbai road map; SUMO integration and trained RL policies remain planned.
 
 ## The flagship challenge
 
@@ -66,7 +66,7 @@ npm run dev
 
 Open [localhost:3000](http://localhost:3000). Choose a disruption and location, or click a road, then press **Simulate**. The ambulance leaves a hospital, travels to the incident, waits briefly, and returns to the hospital. Signals ahead give its corridor priority; crossing traffic waits and nearby cars yield. Pause, resume, reset, and return to the city overview with the map control.
 
-The base map contains 7,507 road segments, 3,805 intersections, 29,494 buildings, 16,540 trees, and 156 service campuses. Every inhabited district has a hospital, fire station, and police station. Cars appear when a simulation starts. All seven disruption choices currently use the same ambulance scenario; other incident-specific behaviors are future work.
+The city occupies 8% of the previous footprint and has exactly 150 named, curved road segments: 42 one-lane streets, 72 two-lane roads, and 36 four-lane roads. Its 100 junction nodes include 55 signalised intersections, with 1,796 buildings and 18 emergency-service campuses. All six districts have a hospital, fire station, and police station. A persistent fleet of 3,600 vehicles fills the network from startup, with a majority of two-wheelers, varied cars, and some trucks. All seven disruption choices currently use the same ambulance scenario; other incident-specific behaviors are future work.
 
     npm test
     npm run build
@@ -76,9 +76,19 @@ One package manifest and lockfile live in the repository root. The [model librar
 
 The [simulation controller](simulation/README.md) is separate from scene rendering. It provides the seam for adding a trained RL signal policy later. Routing and traffic reactions are deterministic demo logic, not learned control or measured research results.
 
-For a browser smoke check on Linux with Google Chrome installed, run npm run test:browser while the dev server is running. Set CHROME_PATH for another Chromium executable. It checks disruption/location controls, a complete round trip, signal recovery, pause/resume, reset, and mobile layout.
+For a browser smoke check on Linux with Google Chrome installed, run npm run test:browser while the dev server is running. Set CHROME_PATH for another Chromium executable. It checks disruption/location controls, a complete round trip, signal recovery, pause/resume, reset, and mobile layout. The same check can target a deployed site using PREVIEW_URL.
 
-![Large coastal city simulation](public/previews/metropolis.png)
+The 3D view requires WebGL 2. If graphics cannot start, enable graphics acceleration under Chrome/Edge Settings → System and relaunch the browser. Open embedded previews in a regular browser tab if needed, then use **Retry graphics**. The renderer lets the browser choose its GPU and retries without antialiasing on less capable devices. A lost graphics context pauses the simulation and resumes it after restoration. Run npm run test:graphics to verify unavailable graphics, retry, reduced settings, and context recovery.
+
+![Compact coastal city simulation](public/previews/metropolis.png)
+
+## Deployment
+
+Vercel configuration is in [vercel.json](vercel.json). Deploy from the repository root with the Vercel CLI:
+
+    vercel deploy --prod --yes
+
+Local Vercel linking data and environment files are excluded from Git and deployment uploads.
 
 ## References
 

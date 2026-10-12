@@ -1,0 +1,11 @@
+.git
+.next
+node_modules
+tests
+scripts
+AGENTS.md
+public/previews
+.env*
+.agents
+.codex
+.aws

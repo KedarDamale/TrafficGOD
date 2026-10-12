@@ -57,7 +57,7 @@ Entrances face +Z and the foundation rests at Y=0. Building geometry and materia
 
 ## Maps and exports
 
-maps/city-map.js creates the large Mumbai-inspired coastal metropolis used by the simulation. This is a deterministic fictional map rather than actual Mumbai geography. City userData contains the road graph, service positions, and counts. Call city.setDetail(camera.zoom) to hide small details in the overview. City signals holds the instanced signal lenses for live color updates.
+maps/city-map.js creates the compact Mumbai-inspired city with exactly 150 curved streets and one/two/four-lane profiles used by the simulation. This is a deterministic fictional map rather than actual Mumbai geography. City userData contains the road graph, service positions, and counts. City signals holds the instanced signal lenses for live color updates.
 
 maps/neighborhood.js retains the smaller Ivory District through createNeighborhoodMap and disposeNeighborhoodMap.
 

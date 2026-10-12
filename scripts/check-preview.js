@@ -7,7 +7,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('http://127.0.0.1:3000', { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.goto(process.env.PREVIEW_URL||'http://127.0.0.1:3000', { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.getByRole('button', { name: 'Simulate', exact: true }).waitFor({ timeout: 90000 });
   if (await page.locator('header, nav, .fleet-list').count()) throw Error('Old gallery UI remains');
   await page.screenshot({ path: '/tmp/trafficgod-metropolis.png' });
