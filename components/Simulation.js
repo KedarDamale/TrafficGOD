@@ -7,14 +7,15 @@ import { createVehicle, animateVehicle, disposeVehicle } from '../3d_models/inde
 import { AmbulanceDemoController, CivilianTraffic, chooseLocations } from '../simulation/demo-controller.js';
 import { nearestRoad } from '../simulation/road-network.js';
 import { FleetRenderer } from '../simulation/fleet-renderer.js';
+import { createSimulationRenderer } from '../simulation/graphics.js';
 
 function SimulationCanvas({ onReady, onState, onError }) {
   const host = useRef(null);
   useEffect(() => {
     const element = host.current;
     let renderer;
-    try { renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' }); }
-    catch { onError('WebGL is unavailable. Enable hardware acceleration to view the simulation.'); return; }
+    try { renderer = createSimulationRenderer(); }
+    catch (error) { onReady(null); onError(error.message, 'graphics'); return; }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setClearColor('#cddfe8');
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -180,14 +181,33 @@ function SimulationCanvas({ onReady, onState, onError }) {
       if (now - lastReport > 250) { publish(); lastReport = now; }
       frame = requestAnimationFrame(tick);
     }
+    let pausedBeforeLoss = false;
+    const contextLost = event => {
+      event.preventDefault();
+      cancelAnimationFrame(frame);
+      pausedBeforeLoss = controller.paused;
+      controller.paused = true;
+      onReady(null);
+      onError('The graphics connection was interrupted. The simulation is paused while your browser restores it. You can also retry graphics.', 'graphics');
+    };
+    const contextRestored = () => {
+      controller.paused = pausedBeforeLoss;
+      last = performance.now();
+      lastSignal = -1;
+      onError(''); onReady(api); resize(); tick();
+    };
+    renderer.domElement.addEventListener('webglcontextlost', contextLost);
+    renderer.domElement.addEventListener('webglcontextrestored', contextRestored);
     controls.update(); onReady(api); publish(); tick();
     return () => {
       cancelAnimationFrame(frame); observer.disconnect(); controls.removeEventListener('start', interruptFollow); controls.dispose();
       renderer.domElement.removeEventListener('pointerdown', down); renderer.domElement.removeEventListener('pointerup', up);
+      renderer.domElement.removeEventListener('webglcontextlost', contextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', contextRestored);
       clearEmergency(); fleet.dispose(); disposeCityMap(city);
       boxGeometry.dispose(); blueMaterial.dispose(); greenMaterial.dispose();
       marker.geometry.dispose(); marker.material.dispose(); markerPin.geometry.dispose(); markerPin.material.dispose();
-      renderer.dispose(); renderer.domElement.remove(); onReady(null);
+      renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); onReady(null);
     };
   }, [onReady, onState, onError]);
   return <div className="simulation-canvas" ref={host} />;
@@ -204,15 +224,16 @@ export default function Simulation() {
   const runtime = useRef(null);
   const [ready, setReady] = useState(false), [event, setEvent] = useState('ambulance');
   const [state, setState] = useState({ phase: 'idle', locations: [], stats: {} }), [error, setError] = useState('');
+  const [graphicsFailed, setGraphicsFailed] = useState(false), [graphicsAttempt, setGraphicsAttempt] = useState(0);
   const receive = useCallback(snapshot => setState(snapshot), []);
-  const reportError = useCallback(message => setError(message), []);
+  const reportError = useCallback((message, kind) => { setError(message); setGraphicsFailed(kind === 'graphics'); }, []);
   const receiveApi = useCallback(api => { runtime.current = api; setReady(!!api); }, []);
   const active = ['outbound', 'at-incident', 'returning'].includes(state.phase);
   return <main className="simulation">
-    <SimulationCanvas onReady={receiveApi} onState={receive} onError={reportError} />
+    <SimulationCanvas key={graphicsAttempt} onReady={receiveApi} onState={receive} onError={reportError} />
     <section className="simulation-controls" aria-label="Disruption simulation controls">
       <div className="control-title"><span className="live-dot" />TrafficGod <small>SIMULATION</small></div>
-      <p className="traffic-count">{state.trafficCount?state.trafficCount.toLocaleString()+' vehicles · 150 distinct streets':'Preparing city traffic…'}</p>
+      <p className="traffic-count">{graphicsFailed?'Graphics unavailable':state.trafficCount?state.trafficCount.toLocaleString()+' vehicles · 150 distinct streets':'Preparing city traffic…'}</p>
       <label htmlFor="event">Disruption</label>
       <select id="event" value={event} disabled={active} onChange={e => setEvent(e.target.value)}>
         {EVENTS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
@@ -225,7 +246,7 @@ export default function Simulation() {
       </select>
       <p className="location-hint">Or click a road on the map. Drag to pan; scroll to zoom.</p>
       <button className="simulate-button" disabled={!ready || active} onClick={() => { setError(''); runtime.current?.simulate(event); }}>
-        {!ready ? 'Building city…' : active ? 'Simulation running' : 'Simulate'}
+        {graphicsFailed ? 'Graphics unavailable' : !ready ? 'Building city…' : active ? 'Simulation running' : 'Simulate'}
       </button>
       <p className="demo-note">All disruptions currently run the same ambulance demo.</p>
       {state.phase !== 'idle' && <div className="run-status">
@@ -239,6 +260,10 @@ export default function Simulation() {
         </div>
       </div>}
       {error && <p className="error" role="alert">{error}</p>}
+      {graphicsFailed && <button className="graphics-retry" onClick={() => {
+        setError(''); setGraphicsFailed(false); setState({ phase: 'idle', locations: [], stats: {} });
+        setGraphicsAttempt(attempt => attempt + 1);
+      }}>Retry graphics</button>}
     </section>
     <button className="overview-button" aria-label="Show whole city" title="Show whole city" onClick={() => runtime.current?.overview()}>⌖</button>
   </main>;
