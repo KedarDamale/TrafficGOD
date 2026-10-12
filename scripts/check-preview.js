@@ -12,8 +12,15 @@ try {
   if (await page.locator('header, nav, .fleet-list').count()) throw Error('Old gallery UI remains');
   await page.screenshot({ path: '/tmp/trafficgod-metropolis.png' });
   console.log('City loaded and captured.');
+  for(const point of [{x:720,y:500},{x:820,y:420},{x:620,y:520},{x:910,y:600},{x:530,y:350}]){
+    await page.locator('.simulation-canvas canvas').click({position:point,force:true});
+    await page.waitForTimeout(300);
+    if(await page.locator('.selected-building').count())break;
+  }
+  if(!await page.locator('.selected-building strong').count())throw Error('Building click did not show its name');
+  await page.screenshot({ path: '/tmp/trafficgod-building.png' });
   await page.getByLabel('Disruption', { exact: true }).selectOption('fire');
-  await page.getByLabel('Incident location', { exact: true }).selectOption({ label: 'Central city' });
+  await page.getByLabel('Incident location', { exact: true }).selectOption({ label: 'Dadar' });
   await page.getByRole('button', { name: 'Simulate', exact: true }).click({force:true});
   await page.getByText('Ambulance → incident', { exact: true }).waitFor({ timeout: 30000 });
   console.log('Ambulance dispatched.');

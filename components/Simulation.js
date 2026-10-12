@@ -2,12 +2,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createCityMap, disposeCityMap, CITY_SCALE } from '../3d_models/maps/city-map.js';
+import { createCityMap, disposeCityMap } from '../3d_models/maps/city-map.js';
 import { createVehicle, animateVehicle, disposeVehicle } from '../3d_models/index.js';
-import { AmbulanceDemoController, CivilianTraffic, chooseLocations } from '../simulation/demo-controller.js';
+import { AmbulanceDemoController, CivilianTraffic, chooseLocations, TRAFFIC_COUNT } from '../simulation/demo-controller.js';
 import { nearestRoad } from '../simulation/road-network.js';
 import { FleetRenderer } from '../simulation/fleet-renderer.js';
 import { createSimulationRenderer } from '../simulation/graphics.js';
+import { createBuildingPicker } from '../simulation/building-selection.js';
 
 function SimulationCanvas({ onReady, onState, onError }) {
   const host = useRef(null);
@@ -24,10 +25,11 @@ function SimulationCanvas({ onReady, onState, onError }) {
     element.appendChild(renderer.domElement);
     renderer.domElement.setAttribute('aria-label', 'Interactive coastal city traffic simulation');
     const scene = new THREE.Scene();
-    const viewHeight=9500*CITY_SCALE;
+    const viewHeight=620;
     const camera = new THREE.OrthographicCamera(-viewHeight*1.6,viewHeight*1.6,viewHeight,-viewHeight,1,40000);
-    const homeTarget = new THREE.Vector3(700, 0, -600).multiplyScalar(CITY_SCALE);
-    const homeOffset = new THREE.Vector3(22000, 30000, 23000).multiplyScalar(CITY_SCALE);
+    const homeTarget = new THREE.Vector3(-200, 0, 30);
+    const homeOffset = new THREE.Vector3(1800, 2300, 1900);
+    camera.zoom = 1.8;
     camera.position.copy(homeTarget).add(homeOffset);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.copy(homeTarget);
@@ -45,12 +47,13 @@ function SimulationCanvas({ onReady, onState, onError }) {
     const city = createCityMap();
     scene.add(city);
     const map = city.userData;
+    const pickBuilding=createBuildingPicker([...map.services,...map.buildingPlots]);
     const controller = new AmbulanceDemoController(map);
     const locations = chooseLocations(map);
     let target = controller.nodes.get(locations[0].node);
-    let follow = false, ambulance = null, frame, incident=null,clickedName=null;
+    let follow = false, ambulance = null, frame, incident=null,clickedName=null,selectedBuilding=null;
     const roadLookup=new Map(map.roads.map(r=>[r.id,r]));
-    const traffic=new CivilianTraffic(map,[],3600);traffic.tick(0,controller);
+    const traffic=new CivilianTraffic(map,[],TRAFFIC_COUNT);traffic.tick(0,controller);
     const fleet=new FleetRenderer(traffic.agents);scene.add(fleet.root);
     let last = performance.now(), lastReport = 0, lastSignal = -1, lastCorridor = '';
     const sceneObjects = new THREE.Group(), routeObjects = new THREE.Group(), corridor = new THREE.Group();
@@ -64,6 +67,23 @@ function SimulationCanvas({ onReady, onState, onError }) {
     const markerPin = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: '#df8d79', roughness: .65 }));
     scene.add(markerPin);
     const green = new THREE.Color('#63b191'), red = new THREE.Color('#da807b');
+    const labelResources=[];
+    function mapLabel(text,x,z,y,width,color){
+      const canvas=document.createElement('canvas');canvas.width=768;canvas.height=96;
+      const context=canvas.getContext('2d');
+      if(!context)return null;
+      context.fillStyle='rgba(255,255,255,.92)';context.fillRect(0,0,768,96);
+      context.font='600 42px Arial';context.fillStyle=color;context.textAlign='center';context.textBaseline='middle';context.fillText(text,384,48,730);
+      const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+      const material=new THREE.SpriteMaterial({map:texture,depthTest:false,transparent:true});
+      const sprite=new THREE.Sprite(material);sprite.position.set(x,y,z);sprite.scale.set(width,width/8,1);scene.add(sprite);labelResources.push({sprite,texture,material});return sprite;
+    }
+    const areaLabels=[...new Set(map.nodes.map(n=>n.district))].map(name=>{
+      const members=map.nodes.filter(n=>n.district===name),x=members.reduce((s,n)=>s+n.x,0)/members.length,z=members.reduce((s,n)=>s+n.z,0)/members.length;
+      return mapLabel(name,x,z,65,180,'#55717d');
+    }).filter(Boolean);
+    const serviceLabels=map.services.map(s=>mapLabel(s.name,s.x,s.z,s.height+7,110,s.type==='police-station'?'#597aae':'#a36563')).filter(Boolean);
+    const selectedLabel=mapLabel('',0,0,40,105,'#4c6373');if(selectedLabel)selectedLabel.visible=false;
     function strip(group, a, b, width, material) {
       const dx = b.x - a.x, dz = b.z - a.z;
       const mesh = new THREE.Mesh(boxGeometry, material);
@@ -88,13 +108,22 @@ function SimulationCanvas({ onReady, onState, onError }) {
     function publish() {
       onState({
         ...controller.snapshot(), yielding: traffic.yielding, trafficCount:traffic.agents.length, stats: map.stats, locations, customTarget:!!incident,
-        targetName: clickedName||locations.find(l => l.node === target.id)?.name || 'Selected road', target: target.id
+        targetName: clickedName||locations.find(l => l.node === target.id)?.name || 'Selected road', target: target.id,selectedBuilding
       });
     }
-    function setTarget(id,point=null) {
+    function setTarget(id,point=null,building=null) {
       if (!['idle', 'completed'].includes(controller.phase)) return;
       const node = controller.nodes.get(id); if (!node) return;
-      target = node;incident=point;clickedName=point?roadLookup.get(point.roadId).name:null;marker.position.set(point?.x??node.x,.3,point?.z??node.z);publish();
+      target = node;incident=point;selectedBuilding=building;clickedName=point?roadLookup.get(point.roadId).name:null;marker.position.set(point?.x??node.x,.3,point?.z??node.z);
+      if(selectedLabel){
+        selectedLabel.visible=!!building;
+        if(building){
+          const texture=selectedLabel.material.map,ctx=texture.image.getContext('2d');
+          ctx.clearRect(0,0,768,96);ctx.fillStyle='rgba(255,255,255,.95)';ctx.fillRect(0,0,768,96);ctx.fillStyle='#4c6373';ctx.fillText(building.name,384,48,730);texture.needsUpdate=true;
+          selectedLabel.position.set(building.x,(building.height||20)+8,building.z);
+        }
+      }
+      publish();
     }
     const api = {
       setTarget,
@@ -129,8 +158,9 @@ function SimulationCanvas({ onReady, onState, onError }) {
       const pointer = new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
       const hit = new THREE.Vector3(); raycaster.setFromCamera(pointer, camera);
       if (raycaster.ray.intersectPlane(ground, hit)) {
-        const near=nearestRoad(map.roads,hit.x,hit.z);
-        if(near.distance<35){const id=near.along<near.road.length/2?near.road.a:near.road.b;setTarget(id,{x:near.x,z:near.z,along:near.along,roadId:near.road.id});}
+        const building=pickBuilding(raycaster.ray);
+        const near=nearestRoad(map.roads,building?.x??hit.x,building?.z??hit.z);
+        if(near.distance<35||building){const id=near.along<near.road.length/2?near.road.a:near.road.b;setTarget(id,{x:near.x,z:near.z,along:near.along,roadId:near.road.id},building?{id:building.id,name:building.name,district:building.district,roadName:building.roadName,x:building.x,z:building.z,height:building.height}:null);}
       }
     };
     const interruptFollow = () => { follow = false; };
@@ -152,7 +182,7 @@ function SimulationCanvas({ onReady, onState, onError }) {
           const desired = new THREE.Vector3(controller.pose.x, 0, controller.pose.z);
           controls.target.lerp(desired, Math.min(1, dt * 3));
           camera.position.copy(controls.target).add(homeOffset);
-          camera.zoom = THREE.MathUtils.lerp(camera.zoom, 18, Math.min(1, dt * 1.8)); camera.updateProjectionMatrix();
+          camera.zoom = THREE.MathUtils.lerp(camera.zoom, 6.5, Math.min(1, dt * 1.8)); camera.updateProjectionMatrix();
         }
       }
       if(!controller.paused)traffic.tick(dt,controller);
@@ -177,6 +207,9 @@ function SimulationCanvas({ onReady, onState, onError }) {
       }
       const markerSize = Math.max(4,30/camera.zoom);
       marker.scale.set(markerSize, 1, markerSize); markerPin.position.set(marker.position.x,markerSize*1.5,marker.position.z); markerPin.scale.setScalar(markerSize * .5);
+      areaLabels.forEach(label=>{label.visible=camera.zoom<3;});
+      serviceLabels.forEach(label=>{label.visible=camera.zoom>=2.5;label.scale.set(300/camera.zoom,37.5/camera.zoom,1);});
+      if(selectedLabel)selectedLabel.scale.set(340/camera.zoom,42.5/camera.zoom,1);
       controls.update(); city.setDetail(camera.zoom); renderer.render(scene, camera);
       if (now - lastReport > 250) { publish(); lastReport = now; }
       frame = requestAnimationFrame(tick);
@@ -207,6 +240,7 @@ function SimulationCanvas({ onReady, onState, onError }) {
       clearEmergency(); fleet.dispose(); disposeCityMap(city);
       boxGeometry.dispose(); blueMaterial.dispose(); greenMaterial.dispose();
       marker.geometry.dispose(); marker.material.dispose(); markerPin.geometry.dispose(); markerPin.material.dispose();
+      labelResources.forEach(({texture,material})=>{texture.dispose();material.dispose();});
       renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); onReady(null);
     };
   }, [onReady, onState, onError]);
@@ -233,7 +267,7 @@ export default function Simulation() {
     <SimulationCanvas key={graphicsAttempt} onReady={receiveApi} onState={receive} onError={reportError} />
     <section className="simulation-controls" aria-label="Disruption simulation controls">
       <div className="control-title"><span className="live-dot" />TrafficGod <small>SIMULATION</small></div>
-      <p className="traffic-count">{graphicsFailed?'Graphics unavailable':state.trafficCount?state.trafficCount.toLocaleString()+' vehicles · 150 distinct streets':'Preparing city traffic…'}</p>
+      <p className="traffic-count">{graphicsFailed?'Graphics unavailable':state.trafficCount?state.trafficCount.toLocaleString()+' vehicles · '+state.stats.roads+' streets':'Preparing city traffic…'}</p>
       <label htmlFor="event">Disruption</label>
       <select id="event" value={event} disabled={active} onChange={e => setEvent(e.target.value)}>
         {EVENTS.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
@@ -245,6 +279,7 @@ export default function Simulation() {
         {state.target&&!state.customTarget&&!state.locations.some(l=>l.node===state.target)&&<option value={state.target}>{state.targetName}</option>}
       </select>
       <p className="location-hint">Or click a road on the map. Drag to pan; scroll to zoom.</p>
+      {state.selectedBuilding&&<div className="selected-building"><strong>{state.selectedBuilding.name}</strong><span>{state.selectedBuilding.district} · {state.selectedBuilding.id}</span><span>{state.selectedBuilding.roadName}</span></div>}
       <button className="simulate-button" disabled={!ready || active} onClick={() => { setError(''); runtime.current?.simulate(event); }}>
         {graphicsFailed ? 'Graphics unavailable' : !ready ? 'Building city…' : active ? 'Simulation running' : 'Simulate'}
       </button>
