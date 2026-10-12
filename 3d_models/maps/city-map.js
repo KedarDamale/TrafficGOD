@@ -150,9 +150,15 @@ export function createCityMap() {
   for(let k=0;k<45;k++){const x=CITY_PARK.x+(rand()-.5)*CITY_PARK.rx*2,z=CITY_PARK.z+(rand()-.5)*CITY_PARK.rz*2;if(isForest(x,z)&&!isLake(x,z))tree(x,z,5+rand()*3);}
   for(const [color,list] of surfaces){const g=mergeGeometries(list,false);list.forEach(g=>g.dispose());const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1}));m.name='curved-road-surfaces';city.add(m);}
   const signalMatrices=[],signalNodes=[],intersections=nodes.filter(n=>n.neighbors.length>=3);
+  // Small paved aprons join the curved road ribbons, including unsignalled
+  // corners and cul-de-sacs. Turning paths must remain on actual pavement.
+  for(const n of nodes){
+    const connected=roads.filter(r=>r.a===n.id||r.b===n.id);
+    n.junctionRadius=Math.max(...connected.map(r=>r.width))*.6+2;
+    instance('disc','#cad7de',[n.x,.14,n.z],[n.junctionRadius,.04,n.junctionRadius]);
+  }
   for(const n of intersections){
-    const approaches=roads.filter(r=>r.a===n.id||r.b===n.id),radius=Math.max(...approaches.map(r=>r.width))*.6;
-    instance('disc','#cad7de',[n.x,.14,n.z],[radius,.04,radius]);
+    const approaches=roads.filter(r=>r.a===n.id||r.b===n.id);
     for(const road of approaches){
       const p=sampleRoad(road,road.a===n.id?12:road.length-12),side=road.a===n.id?1:-1,offset=road.width/2+.8;
       const x=p.x+Math.cos(p.heading)*offset*side,z=p.z-Math.sin(p.heading)*offset*side;

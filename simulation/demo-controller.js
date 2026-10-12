@@ -129,7 +129,7 @@ export class CivilianTraffic {
     const start=this.roadPose(road,agent.a,road.length-turnDistance,agent.offset),node=agent.b;
     const nextB=next.a===node?next.b:next.a,endAlong=Math.min(12,next.length*.2);
     const endOffset=this.laneOffset(agent,next),end=this.roadPose(next,node,endAlong,endOffset);
-    const handle=Math.max(6,Math.hypot(end.x-start.x,end.z-start.z)*.5);
+    const handle=turnDistance;
     const c1={x:start.x+Math.sin(start.heading)*handle,z:start.z+Math.cos(start.heading)*handle};
     const c2={x:end.x-Math.sin(end.heading)*handle,z:end.z-Math.cos(end.heading)*handle};
     const points=[];let length=0;

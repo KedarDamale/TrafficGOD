@@ -35,7 +35,7 @@ function SimulationCanvas({ onReady, onState, onError }) {
     controls.target.copy(homeTarget);
     controls.enableDamping = true;
     controls.dampingFactor = .12;
-    controls.minZoom = .65;
+    controls.minZoom = .25;
     controls.maxZoom = 120;
     controls.maxPolarAngle = Math.PI * .47;
     controls.minPolarAngle = .15;
@@ -100,9 +100,15 @@ function SimulationCanvas({ onReady, onState, onError }) {
     }
     function overview() {
       follow = false;
-      camera.position.copy(homeTarget).add(homeOffset);
-      controls.target.copy(homeTarget);
+      controls.target.set((map.bounds.minX+map.bounds.maxX)/2,0,(map.bounds.minZ+map.bounds.maxZ)/2);
+      camera.position.copy(controls.target).add(homeOffset);
       camera.zoom = 1;
+      camera.updateProjectionMatrix(); controls.update();camera.updateMatrixWorld();
+      let extent=0;
+      for(const x of [map.bounds.minX,map.bounds.maxX])for(const z of [map.bounds.minZ,map.bounds.maxZ]){
+        const p=new THREE.Vector3(x,50,z).project(camera);extent=Math.max(extent,Math.abs(p.x),Math.abs(p.y));
+      }
+      camera.zoom=Math.min(1,.92/extent);
       camera.updateProjectionMatrix(); controls.update();
     }
     function publish() {
@@ -207,7 +213,7 @@ function SimulationCanvas({ onReady, onState, onError }) {
       }
       const markerSize = Math.max(4,30/camera.zoom);
       marker.scale.set(markerSize, 1, markerSize); markerPin.position.set(marker.position.x,markerSize*1.5,marker.position.z); markerPin.scale.setScalar(markerSize * .5);
-      areaLabels.forEach(label=>{label.visible=camera.zoom<3;});
+      areaLabels.forEach(label=>{label.visible=camera.zoom<3&&!selectedBuilding;});
       serviceLabels.forEach(label=>{label.visible=camera.zoom>=2.5;label.scale.set(300/camera.zoom,37.5/camera.zoom,1);});
       if(selectedLabel)selectedLabel.scale.set(340/camera.zoom,42.5/camera.zoom,1);
       controls.update(); city.setDetail(camera.zoom); renderer.render(scene, camera);

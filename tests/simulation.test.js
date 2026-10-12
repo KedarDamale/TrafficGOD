@@ -133,6 +133,12 @@ test('dense mixed traffic covers all 100 roads and stays inside its lanes throug
     for(const a of traffic.agents){
       const road=traffic.lookup.get(a.road),margin=a.kind==='bike'?.65:a.kind==='truck'?1.6:1.3;
       assert.ok(Math.abs(a.offset)+margin<=road.width/2+.001);
+      if(a.turn&&i%5===0){
+        const node=traffic.nodes.get(a.turn.node);
+        const onJunction=Math.hypot(a.pose.x-node.x,a.pose.z-node.z)<=node.junctionRadius+.1;
+        const onRoad=onJunction||map.roads.some(r=>nearestRoad([r],a.pose.x,a.pose.z).distance<=r.width/2+.1);
+        assert.ok(onRoad,'A turning vehicle must remain on the road or paved junction');
+      }
       if(!a.stopped)moving++;
     }
   }
