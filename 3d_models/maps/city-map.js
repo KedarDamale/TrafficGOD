@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createBuilding, disposeBuilding } from '../buildings/index.js';
-import { CITY_SCALE as S,CITY_AREA_FRACTION,PENINSULA,MAINLAND,isLand,isLake,isForest,seededRandom } from '../../simulation/city-layout.js';
+import { CITY_BOUNDS,CITY_PARK,CITY_LAKE,CITY_AREA_FRACTION,PENINSULA,MAINLAND,isLand,isLake,isForest,seededRandom } from '../../simulation/city-layout.js';
 import { createRoadNetwork,sampleRoad,nearestRoad,distance } from '../../simulation/road-network.js';
 export { CITY_SCALE,CITY_AREA_FRACTION } from '../../simulation/city-layout.js';
 export { createNeighborhoodMap,disposeNeighborhoodMap } from './neighborhood.js';
@@ -17,7 +17,7 @@ function ribbon(points,width,y) {
   }
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));g.computeVertexNormals();return g;
 }
-/** Compact 150-street coastal city, with curved roads and distinct one/two/four-lane profiles. */
+/** Dense 100-street coastal neighborhood with buildings filling the blocks. */
 export function createCityMap() {
   const city=new THREE.Group();city.name='mumbai-inspired-city';
   const {nodes,roads}=createRoadNetwork(),rand=seededRandom(721),batches=new Map(),surfaces=new Map();
@@ -38,13 +38,13 @@ export function createCityMap() {
     const g=new THREE.ShapeGeometry(shape);g.rotateX(-Math.PI/2);
     const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1,polygonOffset:true,polygonOffsetFactor:0,polygonOffsetUnits:1}));m.position.y=y;m.name=name;m.receiveShadow=true;city.add(m);
   }
-  const sea=new THREE.Mesh(new THREE.PlaneGeometry(20000,20000),new THREE.MeshStandardMaterial({color:'#b4cfde',roughness:1}));sea.rotation.x=-Math.PI/2;sea.position.y=-.15;sea.name='sea-and-harbor';city.add(sea);
+  const sea=new THREE.Mesh(new THREE.PlaneGeometry(5000,5000),new THREE.MeshStandardMaterial({color:'#b4cfde',roughness:1}));sea.rotation.x=-Math.PI/2;sea.position.y=-.15;sea.name='sea-and-harbor';city.add(sea);
   polygon(PENINSULA,'#edf0eb',.02,'peninsula');polygon(MAINLAND,'#e9eee8',.02,'mainland');
-  for(const [name,x,z,rx,rz,color] of [['forest',-1200,-8900,1350,2000,'#c7d9c0'],['lake',400,-6100,650,450,'#93bed5']]){
+  for(const [name,area,color] of [['forest',CITY_PARK,'#c7d9c0'],['lake',CITY_LAKE,'#93bed5']]){
     const m=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshStandardMaterial({color,roughness:1,polygonOffset:true,polygonOffsetFactor:0,polygonOffsetUnits:-1}));
-    m.rotation.x=-Math.PI/2;m.position.set(x*S,.07,z*S);m.scale.set(rx*S,rz*S,1);m.name=name;city.add(m);
+    m.rotation.x=-Math.PI/2;m.position.set(area.x,.07,area.z);m.scale.set(area.rx,area.rz,1);m.name=name;city.add(m);
   }
-  let treeCount=0,buildingCount=0;
+  let treeCount=0,buildingCount=0;const buildingPlots=[];
   function tree(x,z,size=5){
     instance('box','#a5b7aa',[x,size*.48,z],[.5,size,.5]);
     instance('crown','#b2c8b7',[x,size*1.25,z],[size*.65,size*.8,size*.65]);treeCount++;
@@ -81,10 +81,10 @@ export function createCityMap() {
     for(const [k,type] of ['hospital','fire-station','police-station'].entries()){
       let poi;
       for(let attempt=0;attempt<400&&!poi;attempt++){
-        const road=local[(attempt*7+k*3)%local.length],along=road.length*(.25+rand()*.5),p=sampleRoad(road,along),side=attempt%2?-1:1,offset=road.width/2+42;
+        const road=local[(attempt+k*3)%local.length],along=road.length*(.2+rand()*.6),p=sampleRoad(road,along),side=attempt%2?-1:1,offset=road.width/2+34;
         const x=p.x+Math.cos(p.heading)*offset*side,z=p.z-Math.sin(p.heading)*offset*side;
-        if(!isLand(x,z)||isLake(x,z)||isForest(x,z)||nearestRoad(roads,x,z).distance<32||services.some(s=>Math.hypot(s.x-x,s.z-z)<110))continue;
-        const yaw=Math.atan2(p.x-x,p.z-z),scale=1.8,entry={x:x+Math.sin(yaw)*22,z:z+Math.cos(yaw)*22};
+        if(!isLand(x,z)||isLake(x,z)||isForest(x,z)||nearestRoad(roads,x,z).distance<27||services.some(s=>Math.hypot(s.x-x,s.z-z)<76))continue;
+        const yaw=Math.atan2(p.x-x,p.z-z),scale=1.5,entry={x:x+Math.sin(yaw)*17,z:z+Math.cos(yaw)*17};
         const toA=along<road.length/2,tail=toA?road.points.filter(q=>q.distance<along).reverse():road.points.filter(q=>q.distance>along);
         const connector=[entry,{x:p.x,z:p.z,roadId:road.id},...tail.map(q=>({x:q.x,z:q.z,...(q.node?{id:q.node}:{}),roadId:road.id}))];
         poi={id:type+':'+district,type,district,x,z,yaw,scale,roadNode:toA?road.a:road.b,entrance:entry,connector};
@@ -103,13 +103,14 @@ export function createCityMap() {
       g.applyMatrix4(o.matrixWorld);const key=o.material.color.getHexString();if(!detailed.has(key))detailed.set(key,[]);detailed.get(key).push(g);
     });
     disposeBuilding(b);buildingCount++;
-    instance('box',poi.type==='police-station'?'#d2dbef':'#ead6d1',[poi.x,.07,poi.z],[70,.06,65],poi.yaw);
+    instance('box',poi.type==='police-station'?'#d2dbef':'#ead6d1',[poi.x,.07,poi.z],[48,.06,44],poi.yaw);
   }
   for(const [color,list] of detailed){const g=mergeGeometries(list,false);list.forEach(g=>g.dispose());const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:'#'+color,roughness:.9,flatShading:true}));m.name='service-buildings';city.add(m);}
   const occupied=new Map(),colors=['#e4e9e6','#e0e7e9','#ede8dc','#d6e1e0','#d9e2e8'];
   function placeHouse(x,z,w,d,h,yaw,style){
-    if(!isLand(x,z)||isLake(x,z)||isForest(x,z)||services.some(s=>Math.hypot(s.x-x,s.z-z)<55))return false;
-    const r=Math.hypot(w,d)/2,near=nearestRoad(roads,x,z);if(near.distance<near.road.width/2+r+3)return false;
+    const r=Math.hypot(w,d)/2;
+    if(!isLand(x,z)||!isLand(x-r,z)||!isLand(x+r,z)||!isLand(x,z-r)||!isLand(x,z+r)||isLake(x,z)||isForest(x,z)||services.some(s=>Math.hypot(s.x-x,s.z-z)<38+r))return false;
+    const near=nearestRoad(roads,x,z);if(near.distance<near.road.width/2+r+2)return false;
     const bx=Math.floor(x/50),bz=Math.floor(z/50);
     for(let i=bx-1;i<=bx+1;i++)for(let j=bz-1;j<=bz+1;j++)if((occupied.get(i+':'+j)||[]).some(o=>Math.hypot(o.x-x,o.z-z)<r+o.r+2))return false;
     const key=bx+':'+bz;if(!occupied.has(key))occupied.set(key,[]);occupied.get(key).push({x,z,r});
@@ -120,19 +121,26 @@ export function createCityMap() {
     instance('box','#b3c9d4',[front.x,h*.54,front.z],[w*.68,h*.45,.06],yaw);
     if(style==='apartment')for(let floor=3;floor<h;floor+=4)instance('box','#dae4e5',[front.x,floor,front.z],[w*.75,.18,1.3],yaw);
     if(style==='bungalow')instance('box','#e6ebe2',[front.x,2.3,front.z],[w*.55,.12,2],yaw);
-    buildingCount++;return true;
+    buildingPlots.push({x,z,width:w,depth:d,height:h,radius:r,yaw,style});buildingCount++;return true;
   }
   for(const road of roads){
     if(road.bridge)continue;
-    for(let along=28;along<road.length-28;along+=30+rand()*12)for(const side of [-1,1]){
-      const p=sampleRoad(road,along),w=8+rand()*11,d=10+rand()*10,offset=road.width/2+d/2+8+rand()*10;
+    for(let along=22;along<road.length-22;along+=22+rand()*6)for(const side of [-1,1])for(let row=0;row<3;row++){
+      const p=sampleRoad(road,along),w=12+rand()*9,d=13+rand()*10,offset=road.width/2+d/2+5+row*28;
       const x=p.x+Math.cos(p.heading)*offset*side,z=p.z-Math.sin(p.heading)*offset*side,yaw=p.heading-side*Math.PI/2;
-      const style=road.lanes===1?'bungalow':rand()<.25?'warehouse':'apartment',h=style==='bungalow'?3.5:style==='warehouse'?6:7+Math.floor(rand()*7)*4;
+      const style=road.lanes===1&&row===0?'bungalow':rand()<.12?'warehouse':'apartment',h=style==='bungalow'?3.5:style==='warehouse'?6:9+Math.floor(rand()*9)*4;
       placeHouse(x,z,w,d,h,yaw,style);
-      if(rand()<.25&&isLand(x,z))tree(x+Math.cos(p.heading)*side*12,z-Math.sin(p.heading)*side*12,4);
+      if(row===0&&rand()<.18&&isLand(x,z))tree(p.x+Math.cos(p.heading)*side*(road.width/2+4),p.z-Math.sin(p.heading)*side*(road.width/2+4),3.5);
     }
   }
-  for(let k=0;k<180;k++){const x=(-1200+(rand()-.5)*2600)*S,z=(-8900+(rand()-.5)*3900)*S;if(isForest(x,z)&&isLand(x,z))tree(x,z,7+rand()*5);}
+  // Fill block interiors too; reducing road count must not leave an empty city.
+  for(let z=CITY_BOUNDS.minZ+18;z<CITY_BOUNDS.maxZ;z+=25)for(let x=CITY_BOUNDS.minX+18;x<CITY_BOUNDS.maxX;x+=25){
+    const px=x+(rand()-.5)*7,pz=z+(rand()-.5)*7,near=nearestRoad(roads,px,pz);
+    if(near.distance>170)continue;
+    const p=sampleRoad(near.road,near.along);
+    placeHouse(px,pz,12+rand()*9,13+rand()*9,9+Math.floor(rand()*10)*4,p.heading-Math.PI/2,'apartment');
+  }
+  for(let k=0;k<45;k++){const x=CITY_PARK.x+(rand()-.5)*CITY_PARK.rx*2,z=CITY_PARK.z+(rand()-.5)*CITY_PARK.rz*2;if(isForest(x,z)&&!isLake(x,z))tree(x,z,5+rand()*3);}
   for(const [color,list] of surfaces){const g=mergeGeometries(list,false);list.forEach(g=>g.dispose());const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:1}));m.name='curved-road-surfaces';city.add(m);}
   const signalMatrices=[],signalNodes=[],intersections=nodes.filter(n=>n.neighbors.length>=3);
   for(const n of intersections){
@@ -154,7 +162,7 @@ export function createCityMap() {
   const signals=new THREE.InstancedMesh(geometries.lens,new THREE.MeshBasicMaterial({color:'#ffffff'}),signalMatrices.length);
   signalMatrices.forEach((m,i)=>{signals.setMatrixAt(i,m);signals.setColorAt(i,new THREE.Color(i%2?'#dc7a76':'#58a989'));});
   signals.instanceMatrix.needsUpdate=true;signals.instanceColor.needsUpdate=true;signals.name='traffic-signals';city.add(signals);city.signals=signals;city.setDetail=()=>{};
-  city.userData={id:city.name,seed:721,areaFraction:CITY_AREA_FRACTION,nodes,roads,services,signalNodes,stats:{roads:150,intersections:intersections.length,signals:signalMatrices.length,buildings:buildingCount,trees:treeCount,districts:districts.length,services:services.length,lanes:roads.reduce((counts,r)=>(counts[r.lanes]=(counts[r.lanes]||0)+1,counts),{})},bounds:{width:10700*S,length:23000*S}};
+  city.userData={id:city.name,seed:721,areaFraction:CITY_AREA_FRACTION,nodes,roads,services,signalNodes,buildingPlots,stats:{roads:roads.length,intersections:intersections.length,signals:signalMatrices.length,buildings:buildingCount,trees:treeCount,districts:districts.length,services:services.length,lanes:roads.reduce((counts,r)=>(counts[r.lanes]=(counts[r.lanes]||0)+1,counts),{})},bounds:{...CITY_BOUNDS}};
   return city;
 }
 export function disposeCityMap(city){

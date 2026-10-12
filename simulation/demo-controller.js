@@ -1,6 +1,6 @@
 import { nearestNode,findRoute,routeLength } from './graph.js';
 import { expandRoute,sampleRoad } from './road-network.js';
-import { CITY_SCALE } from './city-layout.js';
+export const TRAFFIC_COUNT = 2000;
 
 export class AmbulanceDemoController {
   constructor(map){this.map=map;this.nodes=new Map(map.nodes.map(n=>[n.id,n]));this.timeScale=6;this.speed=12;this.reset();}
@@ -63,7 +63,7 @@ export class AmbulanceDemoController {
   snapshot(){return{phase:this.phase,paused:this.paused,eventType:this.eventType,progress:this.phase==='completed'?1:this.totalDistance?Math.min(1,this.travelled/this.totalDistance):0,prioritySignals:this.priorities.size,remainingSeconds:this.totalDistance?Math.max(0,(this.totalDistance-this.travelled)/this.speed):0,hospital:this.hospital?.id||null};}
 }
 export function chooseLocations(map){
-  return [['Southern peninsula',-1900,7800],['Central city',-1500,-1200],['Northern suburbs',-1800,-6800],['Eastern district',4200,-1500],['Harbor approach',4300,3500]].map(([name,x,z])=>({name,node:nearestNode(map.nodes,x*CITY_SCALE,z*CITY_SCALE).id}));
+  return [['Worli',-220,520],['Dadar',-220,100],['Tilak Nagar',-230,-180],['Shivaji Nagar',-240,-550],['Chembur',510,-350],['Wadala',510,330]].map(([name,x,z])=>({name,node:nearestNode(map.nodes,x,z).id}));
 }
 const CARS=['baleno','nexon','punch','fronx','wagon-r','dzire','creta','swift','scorpio','ertiga'];
 const BIKES=['splendor-plus','activa','jupiter','shine','pulsar','apache','hf-deluxe','classic-350','access-125','xl100'];

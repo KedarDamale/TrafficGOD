@@ -1,4 +1,5 @@
-import { CITY_SCALE as S, inside, PENINSULA, isLand, isLake, isForest, seededRandom } from './city-layout.js';
+import { CITY_BOUNDS, inside, PENINSULA, isLand, isLake, isForest, seededRandom } from './city-layout.js';
+export const ROAD_COUNT = 100;
 export const distance=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 export function sampleRoad(road,along) {
   const d=Math.max(0,Math.min(road.length,along));
@@ -35,23 +36,23 @@ function curve(a,b,bend){
   return points;
 }
 function district(n) {
-  if(n.zone==='mainland')return n.z<-1200?'Eastern North':'Harbor District';
-  return n.z<-1600?'Northern Suburbs':n.z<0?'Garden Quarter':n.z<1200?'Central City':'Southern Peninsula';
+  if(n.zone==='mainland')return n.z<0?'Chembur':'Wadala';
+  return n.z<-340?'Shivaji Nagar':n.z<-40?'Tilak Nagar':n.z<300?'Dadar':'Worli';
 }
-/** Exactly 150 connected, curved streets, sampled organically rather than from a rectangular grid. */
+/** A physically compact neighborhood with exactly 100 connected, curved streets. */
 export function createRoadNetwork() {
   const rand=seededRandom(832),nodes=[];
   for(let zone=0;zone<2;zone++) {
-    const quota=zone?30:70;
+    const quota=zone?18:48;
     for(let attempts=0,count=0;count<quota&&attempts<30000;attempts++){
-      const x=(-4000+rand()*9700)*S,z=(-11400+rand()*22300)*S;
+      const x=CITY_BOUNDS.minX+rand()*CITY_BOUNDS.width,z=CITY_BOUNDS.minZ+rand()*CITY_BOUNDS.length;
       if(!isLand(x,z)||isLake(x,z)||isForest(x,z))continue;
       const mainland=!inside(x,z,PENINSULA);
-      if(mainland!==!!zone||nodes.some(n=>Math.hypot(n.x-x,n.z-z)<180))continue;
+      if(mainland!==!!zone||nodes.some(n=>Math.hypot(n.x-x,n.z-z)<95))continue;
       const n={id:'J'+String(nodes.length+1).padStart(3,'0'),x,z,zone:zone?'mainland':'peninsula',neighbors:[],costs:{},signal:null};n.district=district(n);nodes.push(n);count++;
     }
   }
-  if(nodes.length!==100)throw new Error('Could not place the road junctions');
+  if(nodes.length!==66)throw new Error('Could not place the road junctions');
   const candidates=[];
   for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
     const a=nodes[i],b=nodes[j],length=distance(a,b);if(a.zone!==b.zone)continue;
@@ -77,21 +78,33 @@ export function createRoadNetwork() {
   for(const c of candidates){
     const key=[c.a.id,c.b.id].sort().join(':');
     if(keys.has(key)||selected.some(r=>curvesCross(c,r)))continue;
-    selected.push(c);keys.add(key);if(selected.length===150)break;
+    selected.push(c);keys.add(key);if(selected.length===ROAD_COUNT)break;
   }
-  if(selected.length!==150)throw new Error('Could not create exactly 150 streets');
+  if(selected.length!==ROAD_COUNT)throw new Error('Could not create exactly 100 streets');
   const byLength=[...selected].sort((a,b)=>a.length-b.length);
-  const prefix=['Palm','Lotus','Harbor','Garden','Cedar','Market','Coconut','Station','Temple','Marina','Sunset','Foundry','Coral','School','Clinic'];
-  const suffix=['Lane','Crescent','Road','Approach','Street','Drive','Walk','Passage','Way','Link'];
+  const names=['Lokmanya Tilak Marg','Chhatrapati Shivaji Maharaj Marg','Dr. Babasaheb Ambedkar Marg','Mahatma Phule Marg','Savitribai Phule Marg','Sant Dnyaneshwar Marg','Sant Tukaram Marg','Veer Savarkar Marg','Senapati Bapat Marg','Gokhale Marg','Agarkar Marg','Shahu Maharaj Marg','Jijamata Marg','Rajmata Jijau Marg','Samarth Ramdas Marg','Sant Namdev Marg','Vishnudas Bhave Marg','Pu. La. Deshpande Marg','Kusumagraj Marg','Yashwantrao Chavan Marg','Ganesh Mandir Path','Maruti Mandir Marg','Bazar Peth Road','Gaothan Galli','Saraswati Path','Vidya Mandir Marg','Matoshri Marg','Subhash Chowk Marg','Sane Guruji Marg','Karmaveer Bhaurao Patil Marg','Dadasaheb Phalke Marg','Vasantrao Naik Marg','Tulshibaug Galli','Vitthal Mandir Path','Shivneri Marg','Raigad Marg'];
+  const areaCounts=new Map();
   const roads=selected.map((c,i)=>{
-    const rank=byLength.indexOf(c),lanes=c.bridge?4:rank<42?1:rank>114?4:2;
+    const rank=byLength.indexOf(c),lanes=c.bridge?4:rank<26?1:rank>=76?4:2;
     let length=0;
     const points=c.points.map((p,j)=>{if(j)length+=distance(c.points[j-1],p);return {...p,distance:length,...(j===0?{node:c.a.id}:j===c.points.length-1?{node:c.b.id}:{})};});
     const character=c.bridge?'Harbor bridge':lanes===1?(i%2?'Bazaar lane':'Residential alley'):lanes===4?(i%2?'Tree-lined boulevard':'Urban arterial'):['Waterfront connector','School street','Garden crescent','Neighborhood link'][i%4];
-    const road={id:'R'+String(i+1).padStart(3,'0'),name:prefix[i%prefix.length]+' '+suffix[Math.floor(i/prefix.length)],a:c.a.id,b:c.b.id,lanes,oneWay:lanes===1,width:lanes*3.5+2,length,points,bridge:c.bridge,character,district:c.a.district};
+    const number=areaCounts.get(c.a.district)||0;areaCounts.set(c.a.district,number+1);
+    const road={id:'R'+String(i+1).padStart(3,'0'),name:names[number%names.length]+(number>=names.length?' '+(Math.floor(number/names.length)+1):'')+' · '+c.a.district,a:c.a.id,b:c.b.id,lanes,oneWay:false,width:lanes*3.5+2,length,points,bridge:c.bridge,character,district:c.a.district};
     c.a.neighbors.push(c.b.id);c.b.neighbors.push(c.a.id);c.a.costs[c.b.id]=length;c.b.costs[c.a.id]=length;
     return road;
   });
+  // Only make an alley one-way when the remaining two-way network still connects
+  // both ends. Every junction retains an exit; traffic never needs to respawn.
+  for(const road of roads.filter(r=>r.lanes===1)){
+    const seen=new Set([road.a]),queue=[road.a];
+    for(let i=0;i<queue.length;i++)for(const r of roads){
+      if(r===road||r.oneWay)continue;
+      const next=r.a===queue[i]?r.b:r.b===queue[i]?r.a:null;
+      if(next&&!seen.has(next)){seen.add(next);queue.push(next);}
+    }
+    road.oneWay=seen.has(road.b);
+  }
   return {nodes,roads};
 }
 export function expandRoute(map,nodes) {
